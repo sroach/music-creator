@@ -47,20 +47,21 @@ object Id3TagWriter {
     private fun buildTextFrame(id: String, text: String): ByteArray {
         val textBytes = text.toByteArray(StandardCharsets.UTF_8)
         // Frame: ID(4) + size(4) + flags(2) + encoding(1) + text
-        val frameData = byteArrayOf(0.toByte()) + textBytes // encoding 0 = ISO-8859-1, but we use UTF-8 with encoding=1
-        val frameDataUtf8 = byteArrayOf(1.toByte()) + textBytes // encoding 1 = UTF-8
-        val size = frameDataUtf8.size
+        // ID3v2.4 encoding: 0=ISO-8859-1, 1=UTF-16 with BOM, 2=UTF-16BE, 3=UTF-8
+        val frameData = byteArrayOf(3.toByte()) + textBytes // encoding 3 = UTF-8
+        val size = frameData.size
         return id.toByteArray(StandardCharsets.US_ASCII) +
                 size.toSyncSafeByte(4) +
                 byteArrayOf(0, 0) + // flags
-                frameDataUtf8
+                frameData
     }
 
     private fun buildLyricsFrame(lyrics: String): ByteArray {
         val lyricsBytes = lyrics.toByteArray(StandardCharsets.UTF_8)
         val lang = "eng".toByteArray(StandardCharsets.US_ASCII)
         val desc = "Lyrics".toByteArray(StandardCharsets.UTF_8) + byteArrayOf(0)
-        val frameData = byteArrayOf(1.toByte()) + lang + desc + byteArrayOf(0) + lyricsBytes // encoding 1 = UTF-8
+        // ID3v2.4 encoding: 3 = UTF-8
+        val frameData = byteArrayOf(3.toByte()) + lang + desc + byteArrayOf(0) + lyricsBytes
         val size = frameData.size
         return "USLT".toByteArray(StandardCharsets.US_ASCII) +
                 size.toSyncSafeByte(4) +

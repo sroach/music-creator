@@ -79,3 +79,18 @@ data class AceMessage(
 data class AceAudio(
     val data: String? = null
 )
+
+// Metadata saved alongside generated MP3
+@Serializable
+data class SongMetadata(
+    val song_name: String,
+    val artist: String,
+    val prompt: String,
+    val lyrics: String,
+    val duration: Int,
+    val bpm: Int,
+    val model: String = "acemusic/acestep-v15-turbo",
+    val filename: String,
+    val created_at: String,
+    val file_size_bytes: Int
+)

@@ -9,9 +9,15 @@ import io.ktor.server.routing.*
 import java.io.File
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import kotlinx.serialization.json.Json
 
 private val outputDir = File("output").apply { mkdirs() }
 private val apiKey = System.getenv("ACESTEP_API_KEY")
+
+private val metadataJson = Json {
+    prettyPrint = true
+    ignoreUnknownKeys = true
+}
 
 fun Application.configureRouting() {
     // CORS support for browser requests
@@ -91,22 +97,20 @@ fun Application.configureRouting() {
                     println("⚠️  Failed to embed ID3 tags: ${e.message}")
                 }
 
-                // Save metadata JSON
-                val metadata = buildString {
-                    appendLine("{")
-                    appendLine("  \"song_name\": \"${request.song_name.replace("\"", "\\\"")}\",")
-                    appendLine("  \"artist\": \"${request.artist.replace("\"", "\\\"")}\",")
-                    appendLine("  \"prompt\": \"${request.prompt.replace("\"", "\\\"")}\",")
-                    appendLine("  \"lyrics\": \"${request.lyrics.replace("\"", "\\\"")}\",")
-                    appendLine("  \"duration\": ${request.duration},")
-                    appendLine("  \"bpm\": ${request.bpm},")
-                    appendLine("  \"model\": \"acemusic/acestep-v15-turbo\",")
-                    appendLine("  \"filename\": \"$filename\",")
-                    appendLine("  \"created_at\": \"${LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)}\",")
-                    appendLine("  \"file_size_bytes\": ${audioBytes.size}")
-                    append("}")
-                }
-                File(outputDir, "$safeName.json").writeText(metadata)
+                // Save metadata JSON using proper serialization
+                val metadata = SongMetadata(
+                    song_name = request.song_name,
+                    artist = request.artist,
+                    prompt = request.prompt,
+                    lyrics = request.lyrics,
+                    duration = request.duration,
+                    bpm = request.bpm,
+                    filename = filename,
+                    created_at = LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
+                    file_size_bytes = audioBytes.size
+                )
+                val metadataJson = metadataJson.encodeToString(metadata)
+                File(outputDir, "$safeName.json").writeText(metadataJson)
 
                 call.respond(GenerateResponse(
                     message = "Song generated successfully",

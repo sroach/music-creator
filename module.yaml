@@ -9,7 +9,7 @@ settings:
 
 dependencies:
   - $ktor.server.core
-  - $ktor.server.netty
+  - $ktor.server.cio
   - $ktor.server.config.yaml
   - $ktor.server.contentNegotiation
   - $ktor.serialization.kotlinx.json
