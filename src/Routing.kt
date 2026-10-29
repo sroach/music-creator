@@ -23,30 +23,35 @@ private val Application.outputDir: File
         return File(dir).apply { mkdirs() }
     }
 
+private val Application.contextPath: String
+    get() = System.getProperty("app.contextPath", "")
+
 fun Application.configureRouting() {
+    val ctx = contextPath
     routing {
-        // Main page - serve HTML from resources
-        get("/") {
-            val html = javaClass.classLoader.getResource("static/index.html")
-                ?.readText()
-                ?: "<html><body><h1>Music Creator</h1><p>index.html not found</p></body></html>"
-            call.respondText(html, ContentType.Text.Html)
-        }
-
-        // Favicon
-        get("/favicon.svg") {
-            val svg = javaClass.classLoader.getResource("static/favicon.svg")
-                ?.readText()
-                ?: ""
-            if (svg.isNotBlank()) {
-                call.respondText(svg, ContentType.parse("image/svg+xml"))
-            } else {
-                call.respond(HttpStatusCode.NotFound)
+        route(ctx) {
+            // Main page - serve HTML from resources
+            get("/") {
+                val html = javaClass.classLoader.getResource("static/index.html")
+                    ?.readText()
+                    ?: "<html><body><h1>Music Creator</h1><p>index.html not found</p></body></html>"
+                call.respondText(html, ContentType.Text.Html)
             }
-        }
 
-        // Generate song endpoint
-        post("/generate") {
+            // Favicon
+            get("/favicon.svg") {
+                val svg = javaClass.classLoader.getResource("static/favicon.svg")
+                    ?.readText()
+                    ?: ""
+                if (svg.isNotBlank()) {
+                    call.respondText(svg, ContentType.parse("image/svg+xml"))
+                } else {
+                    call.respond(HttpStatusCode.NotFound)
+                }
+            }
+
+            // Generate song endpoint
+            post("/generate") {
             if (apiKey.isNullOrBlank()) {
                 call.respond(
                     HttpStatusCode.InternalServerError,

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
     <title>Music Creator</title>
     <style>
         * {
@@ -260,8 +260,11 @@
             status.className = 'status loading';
             status.innerHTML = '<span class="spinner"></span> Generating your song... This may take a few minutes.';
 
+            // Derive base path from current URL to support reverse proxy prefixes (e.g. /music-creator/)
+            const basePath = window.location.pathname.replace(/\/[^\/]*$/, '') || '';
+
             try {
-                const response = await fetch('/generate', {
+                const response = await fetch(basePath + '/generate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
@@ -271,9 +274,12 @@
 
                 if (response.ok) {
                     status.className = 'status success';
+                    const downloadUrl = result.download_url.startsWith('http')
+                        ? result.download_url
+                        : basePath + result.download_url;
                     status.innerHTML = `
                         ✅ Song generated successfully!<br>
-                        <a href="${result.download_url}" class="download-link" download>⬇ Download ${result.filename}</a>
+                        <a href="${downloadUrl}" class="download-link" download>⬇ Download ${result.filename}</a>
                     `;
                 } else {
                     status.className = 'status error';

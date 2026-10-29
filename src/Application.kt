@@ -12,7 +12,9 @@ import kotlinx.serialization.json.Json
 fun main(args: Array<String>) {
     val port = args.getPortOrDefault()
     val outputDir = args.getOutputDirOrDefault()
+    val contextPath = args.getContextPathOrDefault()
     System.setProperty("app.outputDir", outputDir)
+    System.setProperty("app.contextPath", contextPath)
     embeddedServer(CIO, port = port, module = Application::module)
         .start(wait = true)
 }
@@ -51,6 +53,21 @@ private fun Array<String>.getOutputDirOrDefault(): String {
         }
     }
     return defaultDir
+}
+
+private fun Array<String>.getContextPathOrDefault(): String {
+    val defaultPath = ""
+    for (i in indices) {
+        when {
+            this[i] == "--context-path" && i + 1 < size -> {
+                return this[i + 1].let { p -> if (p.startsWith("/")) p else "/$p" }
+            }
+            this[i].startsWith("--context-path=") -> {
+                return this[i].substringAfter("=").let { p -> if (p.startsWith("/")) p else "/$p" }
+            }
+        }
+    }
+    return defaultPath
 }
 
 fun Application.module() {
