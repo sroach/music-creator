@@ -2,7 +2,6 @@ package org.jetbrains.amper.ktor
 
 import io.ktor.http.*
 import io.ktor.server.application.*
-import io.ktor.server.plugins.cors.routing.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
@@ -25,17 +24,6 @@ private val Application.outputDir: File
     }
 
 fun Application.configureRouting() {
-    // CORS support for browser requests
-    install(io.ktor.server.plugins.cors.routing.CORS) {
-        anyHost()
-        allowMethod(HttpMethod.Options)
-        allowMethod(HttpMethod.Put)
-        allowMethod(HttpMethod.Delete)
-        allowMethod(HttpMethod.Patch)
-        allowHeader(HttpHeaders.Authorization)
-        allowNonSimpleContentTypes = true
-    }
-
     routing {
         // Main page - serve HTML from resources
         get("/") {

@@ -281,7 +281,11 @@
                 }
             } catch (err) {
                 status.className = 'status error';
-                status.textContent = '❌ Network error: ' + err.message;
+                if (err.message && err.message.includes('JSON.parse')) {
+                    status.textContent = '❌ Server returned an invalid response. Check server logs for details.';
+                } else {
+                    status.textContent = '❌ Network error: ' + err.message;
+                }
             } finally {
                 submitBtn.disabled = false;
                 submitBtn.textContent = 'Generate Song';
