@@ -11,13 +11,18 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import kotlinx.serialization.json.Json
 
-private val outputDir = File("output").apply { mkdirs() }
 private val apiKey = System.getenv("ACESTEP_API_KEY")
 
 private val metadataJson = Json {
     prettyPrint = true
     ignoreUnknownKeys = true
 }
+
+private val Application.outputDir: File
+    get() {
+        val dir = System.getProperty("app.outputDir", "output")
+        return File(dir).apply { mkdirs() }
+    }
 
 fun Application.configureRouting() {
     // CORS support for browser requests
@@ -91,7 +96,7 @@ fun Application.configureRouting() {
                     .takeIf { it.isNotBlank() } ?: "generated_song"
 
                 val filename = "$safeName.mp3"
-                val filepath = File(outputDir, filename)
+                val filepath = File(this@configureRouting.outputDir, filename)
 
                 // Save MP3 file
                 filepath.writeBytes(audioBytes)
@@ -122,7 +127,7 @@ fun Application.configureRouting() {
                     file_size_bytes = audioBytes.size
                 )
                 val metadataJson = metadataJson.encodeToString(metadata)
-                File(outputDir, "$safeName.json").writeText(metadataJson)
+                File(this@configureRouting.outputDir, "$safeName.json").writeText(metadataJson)
 
                 call.respond(GenerateResponse(
                     message = "Song generated successfully",
@@ -146,7 +151,7 @@ fun Application.configureRouting() {
                 call.respond(HttpStatusCode.NotFound, ErrorResponse("File not found"))
                 return@get
             }
-            val filepath = File(outputDir, filename)
+            val filepath = File(call.application.outputDir, filename)
             if (filepath.exists()) {
                 call.response.headers.append("Content-Disposition", "attachment; filename=\"$filename\"")
                 call.respondFile(filepath)

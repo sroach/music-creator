@@ -9,6 +9,8 @@ import kotlinx.serialization.json.Json
 
 fun main(args: Array<String>) {
     val port = args.getPortOrDefault()
+    val outputDir = args.getOutputDirOrDefault()
+    System.setProperty("app.outputDir", outputDir)
     embeddedServer(CIO, port = port, module = Application::module)
         .start(wait = true)
 }
@@ -29,6 +31,24 @@ private fun Array<String>.getPortOrDefault(): Int {
         }
     }
     return defaultPort
+}
+
+private fun Array<String>.getOutputDirOrDefault(): String {
+    val defaultDir = "output"
+    for (i in indices) {
+        when {
+            this[i] == "--output" && i + 1 < size -> {
+                return this[i + 1]
+            }
+            this[i].startsWith("--output=") -> {
+                return this[i].substringAfter("=")
+            }
+            this[i] == "-o" && i + 1 < size -> {
+                return this[i + 1]
+            }
+        }
+    }
+    return defaultDir
 }
 
 fun Application.module() {
