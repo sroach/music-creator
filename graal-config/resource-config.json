@@ -1,0 +1,39 @@
+{
+  "resources": {
+    "includes": [
+      {
+        "pattern": ".*application\\.yaml"
+      },
+      {
+        "pattern": ".*logback\\.xml"
+      },
+      {
+        "pattern": ".*static/index\\.html"
+      },
+      {
+        "pattern": ".*ktor.*"
+      },
+      {
+        "pattern": ".*logback.*"
+      },
+      {
+        "pattern": ".*slf4j.*"
+      },
+      {
+        "pattern": ".*kotlinx/serialization/.*"
+      },
+      {
+        "pattern": ".*META-INF/services/.*"
+      },
+      {
+        "pattern": ".*META-INF/native-image/.*"
+      },
+      {
+        "pattern": ".*\\.properties"
+      },
+      {
+        "pattern": ".*\\.json"
+      }
+    ]
+  }
+}
