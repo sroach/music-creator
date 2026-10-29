@@ -61,7 +61,8 @@ object Id3TagWriter {
         val lang = "eng".toByteArray(StandardCharsets.US_ASCII)
         val desc = "Lyrics".toByteArray(StandardCharsets.UTF_8) + byteArrayOf(0)
         // ID3v2.4 encoding: 3 = UTF-8
-        val frameData = byteArrayOf(3.toByte()) + lang + desc + byteArrayOf(0) + lyricsBytes
+        // Format: encoding(1) + lang(3) + desc(null-terminated) + lyrics
+        val frameData = byteArrayOf(3.toByte()) + lang + desc + lyricsBytes
         val size = frameData.size
         return "USLT".toByteArray(StandardCharsets.US_ASCII) +
                 size.toSyncSafeByte(4) +
