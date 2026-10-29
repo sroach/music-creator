@@ -40,6 +40,18 @@ fun Application.configureRouting() {
             call.respondText(html, ContentType.Text.Html)
         }
 
+        // Favicon
+        get("/favicon.svg") {
+            val svg = javaClass.classLoader.getResource("static/favicon.svg")
+                ?.readText()
+                ?: ""
+            if (svg.isNotBlank()) {
+                call.respondText(svg, ContentType.parse("image/svg+xml"))
+            } else {
+                call.respond(HttpStatusCode.NotFound)
+            }
+        }
+
         // Generate song endpoint
         post("/generate") {
             if (apiKey.isNullOrBlank()) {
