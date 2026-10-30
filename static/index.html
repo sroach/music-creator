@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-base-path="<BASE_PATH_PLACEHOLDER/>">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+    <link rel="icon" href="<BASE_PATH_PLACEHOLDER/>/static/favicon.svg" type="image/svg+xml">
     <title>Music Creator</title>
     <style>
         * {
@@ -322,6 +322,24 @@
     </div>
 
     <script>
+        // Base path injected by the server via data attribute on <html>.
+        // Falls back to deriving from location.pathname if not set.
+        const basePath = (() => {
+            const injected = document.documentElement.getAttribute('data-base-path');
+            if (injected && injected.trim() !== '' && injected !== '<BASE_PATH_PLACEHOLDER/>') {
+                return injected.trim();
+            }
+            // Fallback: derive from current URL
+            const path = location.pathname;
+            const segments = path.split('/').filter(Boolean);
+            const idx = segments.indexOf('index.html');
+            if (idx !== -1) {
+                const base = '/' + segments.slice(0, idx).join('/');
+                return base || '';
+            }
+            return '/' + segments.join('/');
+        })();
+
         const form = document.getElementById('generateForm');
         const status = document.getElementById('status');
         const submitBtn = document.getElementById('submitBtn');
@@ -340,7 +358,7 @@
 
         async function loadSongs() {
             try {
-                const response = await fetch('/list');
+                const response = await fetch(basePath + '/list');
                 const songs = await response.json();
 
                 if (songs.length === 0) {
@@ -383,7 +401,7 @@
             status.innerHTML = '<span class="spinner"></span> Generating your song... This may take a few minutes.';
 
             try {
-                const response = await fetch('/generate', {
+                const response = await fetch(basePath + '/generate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)

@@ -42,6 +42,10 @@ struct CliArgs {
     /// Output directory for generated MP3 files (defaults to "output")
     #[arg(long, default_value = "output")]
     output_dir: String,
+
+    /// Base path prefix for reverse proxy support (e.g. "/music-creator")
+    #[arg(long, default_value = "")]
+    base_path: String,
 }
 
 impl std::fmt::Debug for CliArgs {
@@ -50,6 +54,7 @@ impl std::fmt::Debug for CliArgs {
             .field("api_key", &self.api_key.as_ref().map(|_| "***"))
             .field("port", &self.port)
             .field("output_dir", &self.output_dir)
+            .field("base_path", &self.base_path)
             .finish()
     }
 }
@@ -147,11 +152,21 @@ struct AudioConfig {
 struct AppState {
     api_key: Option<String>,
     output_dir: String,
+    base_path: String,
 }
 
-async fn index() -> impl axum::response::IntoResponse {
+async fn index(
+    state: axum::extract::State<Arc<AppState>>,
+) -> impl axum::response::IntoResponse {
     match fs::read_to_string("static/index.html") {
-        Ok(content) => Html(content).into_response(),
+        Ok(content) => {
+            // Inject base path into the HTML so static resources resolve correctly
+            let content = content.replace(
+                "<BASE_PATH_PLACEHOLDER/>",
+                &state.base_path,
+            );
+            Html(content).into_response()
+        }
         Err(_) => (
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
             "Failed to load index",
@@ -369,7 +384,7 @@ async fn generate(
         eprintln!("⚠️  Warning: Failed to save metadata: {}", e);
     }
 
-    let download_url = format!("/download/{}", filename);
+    let download_url = format!("{}/download/{}", state.base_path, filename);
 
     (StatusCode::OK, Json(GenerateResponse {
         message: "Song generated successfully".to_string(),
@@ -576,7 +591,7 @@ async fn list_files(
                                 artist: metadata.artist,
                                 created_at: metadata.created_at,
                                 file_size_bytes: file_size,
-                                download_url: format!("/download/{}", metadata.filename),
+                                download_url: format!("{}/download/{}", state.base_path, metadata.filename),
                             });
                         }
                     }
@@ -630,28 +645,50 @@ async fn main() -> Result<()> {
     // Ensure output directory exists
     fs::create_dir_all(&output_dir_path).unwrap_or_else(|_| ());
 
+    // Resolve base path from CLI arg or env var
+    let base_path = cli.base_path;
+
     let state = Arc::new(AppState {
         api_key,
         output_dir: output_dir_path.display().to_string(),
+        base_path: base_path.clone(),
     });
 
     println!("🎵 Music Creator starting on http://localhost:{}", port);
     println!("📁 Output directory: {}", state.output_dir);
+    if !base_path.is_empty() {
+        println!("🔗 Base path: {}", base_path);
+    }
 
-    // Build the router with CORS
-    let app = Router::new()
+    // Build the inner router with all API routes
+    let inner = Router::new()
         .route("/", get(index))
         .route("/generate", post(generate))
         .route("/list", get(list_files))
         .route("/download/{filename}", get(download_file))
-        .nest_service("/static", ServeDir::new("static"))
-        .layer(
-            CorsLayer::new()
-                .allow_origin(Any)
-                .allow_methods(Any)
-                .allow_headers(Any),
-        )
-        .with_state(state);
+        .nest_service("/static", ServeDir::new("static"));
+
+    // If a base path is configured, nest the router under it
+    let app = if base_path.is_empty() {
+        inner
+            .layer(
+                CorsLayer::new()
+                    .allow_origin(Any)
+                    .allow_methods(Any)
+                    .allow_headers(Any),
+            )
+            .with_state(state)
+    } else {
+        Router::new()
+            .nest(&base_path, inner)
+            .layer(
+                CorsLayer::new()
+                    .allow_origin(Any)
+                    .allow_methods(Any)
+                    .allow_headers(Any),
+            )
+            .with_state(state)
+    };
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
