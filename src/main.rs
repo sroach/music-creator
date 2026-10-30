@@ -534,25 +534,31 @@ fn embed_id3_tags(
 }
 
 /// Sync the m3u playlist file with all MP3 files in the output directory.
-/// Songs with .json metadata use that info; orphan MP3s fall back to ID3 tags or filename.
-/// Creates or overwrites playlist.m3u sorted by created_at descending (orphans at the end).
+/// Generates a simple m3u format (one absolute path per line) for Liquidsoap compatibility.
+/// No #EXTM3U header or #EXTINF metadata lines — just raw paths.
 fn sync_m3u_playlist(output_dir: &PathBuf) {
     let m3u_path = output_dir.join("playlist.m3u");
 
-    // Collect songs from JSON metadata files
-    let mut songs: Vec<SongMetadata> = Vec::new();
+    // Get the absolute path of the output directory
+    let abs_output_dir = match std::fs::canonicalize(output_dir) {
+        Ok(p) => p,
+        Err(_) => output_dir.clone(),
+    };
+
+    // Collect filenames from JSON metadata files
+    let mut filenames: Vec<String> = Vec::new();
     let mut known_filenames = std::collections::HashSet::new();
 
-    if let Ok(entries) = fs::read_dir(output_dir) {
+    if let Ok(entries) = fs::read_dir(&abs_output_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().and_then(|e| e.to_str()) == Some("json") {
                 if let Ok(content) = fs::read_to_string(&path) {
                     if let Ok(metadata) = serde_json::from_str::<SongMetadata>(&content) {
-                        let mp3_path = output_dir.join(&metadata.filename);
+                        let mp3_path = abs_output_dir.join(&metadata.filename);
                         if mp3_path.exists() {
                             known_filenames.insert(metadata.filename.clone());
-                            songs.push(metadata);
+                            filenames.push(metadata.filename.clone());
                         }
                     }
                 }
@@ -560,9 +566,9 @@ fn sync_m3u_playlist(output_dir: &PathBuf) {
         }
     }
 
-    // Find orphan MP3s (no matching JSON metadata) and try to read ID3 tags
-    let mut orphans: Vec<SongMetadata> = Vec::new();
-    if let Ok(entries) = fs::read_dir(output_dir) {
+    // Find orphan MP3s (no matching JSON metadata)
+    let mut orphan_filenames: Vec<String> = Vec::new();
+    if let Ok(entries) = fs::read_dir(&abs_output_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().and_then(|e| e.to_str()) == Some("mp3") {
@@ -570,82 +576,30 @@ fn sync_m3u_playlist(output_dir: &PathBuf) {
                 if filename.is_empty() || filename == "playlist.m3u" {
                     continue;
                 }
-                // Skip if already covered by metadata
                 if known_filenames.contains(&filename) {
                     continue;
                 }
-
-                // Try to read ID3 tags for title/artist
-                let (title, artist) = match Tag::read_from_path(&path) {
-                    Ok(tag) => {
-                        let t = tag.title().map(|s| s.to_string()).unwrap_or_default();
-                        let a = tag.artist().map(|s| s.to_string()).unwrap_or_default();
-                        (t, a)
-                    }
-                    Err(_) => (String::new(), String::new()),
-                };
-
-                // Fallback: derive title from filename
-                let display_title = if title.is_empty() {
-                    let stem = path
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or(&filename);
-                    stem.replace('_', " ")
-                } else {
-                    title
-                };
-                let display_artist = if artist.is_empty() {
-                    "Unknown Artist".to_string()
-                } else {
-                    artist
-                };
-
-                let file_size = path
-                    .metadata()
-                    .ok()
-                    .map(|m| m.len() as usize)
-                    .unwrap_or(0);
-
-                orphans.push(SongMetadata {
-                    song_name: display_title,
-                    artist: display_artist,
-                    prompt: String::new(),
-                    lyrics: String::new(),
-                    duration: 0,
-                    bpm: 0,
-                    model: String::new(),
-                    filename,
-                    created_at: String::new(),
-                    file_size_bytes: file_size,
-                });
+                orphan_filenames.push(filename);
             }
         }
     }
 
-    // Sort metadata-backed songs by created_at descending
-    songs.sort_by(|a, b| b.created_at.cmp(&a.created_at));
-    // Append orphans (no timestamp, so they sort to the end)
-    songs.extend(orphans);
+    // Append orphans after metadata-backed songs
+    filenames.extend(orphan_filenames);
 
-    // Build m3u content
+    // Build simple m3u content — one absolute path per line, no metadata
     let mut lines = Vec::new();
-    lines.push("#EXTM3U".to_string());
-    for song in &songs {
-        let duration = if song.duration > 0 {
-            song.duration as i64
-        } else {
-            -1
-        };
-        let title = format!("{} - {}", song.artist, song.song_name);
-        lines.push(format!("#EXTINF:{},{}", duration, title));
-        lines.push(song.filename.clone());
+    for filename in &filenames {
+        let abs_path = abs_output_dir.join(filename);
+        if let Some(path_str) = abs_path.to_str() {
+            lines.push(path_str.to_string());
+        }
     }
 
     if let Err(e) = fs::write(&m3u_path, lines.join("\n") + "\n") {
         eprintln!("⚠️  Warning: Failed to write playlist.m3u: {}", e);
     } else {
-        println!("🎵 Playlist synced: {} songs in playlist.m3u", songs.len());
+        println!("🎵 Playlist synced: {} songs in playlist.m3u", filenames.len());
     }
 }
 
