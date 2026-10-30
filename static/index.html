@@ -367,7 +367,7 @@
                             </div>
                         </div>
                         <div class="song-play">
-                            <audio controls preload="none" src="${basePath}/download/${song.filename}"></audio>
+                            <audio controls preload="none" src="${basePath}/download/${song.filename}?t=${song.created_at}"></audio>
                         </div>
                     </div>
                 `).join('');
@@ -405,10 +405,11 @@
 
                 if (response.ok) {
                     status.className = 'status success';
+                    const now = Date.now();
                     status.innerHTML = `
                         ✅ Song generated successfully!<br>
                         <div class="play-section">
-                            <audio controls autoplay preload="none" src="${basePath}/download/${result.filename}"></audio>
+                            <audio controls autoplay preload="none" src="${basePath}/download/${result.filename}?t=${now}"></audio>
                         </div>
                     `;
                     // Refresh the song list
