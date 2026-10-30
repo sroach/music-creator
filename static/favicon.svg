@@ -7,5 +7,8 @@
     </linearGradient>
   </defs>
   <rect width="64" height="64" rx="12" fill="url(#grad)"/>
-  <text x="32" y="46" font-size="40" text-anchor="middle"  stroke="#ff006b" stroke-width="8">🎵</text>
+  <path d="M29 44V18l22-6v27" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="5"/>
+  <path d="M29 18l22-6v8l-22 6z" fill="#fff"/>
+  <ellipse cx="22" cy="46" rx="9" ry="6" transform="rotate(-25 22 46)" fill="#fff"/>
+  <ellipse cx="43" cy="40" rx="9" ry="6" transform="rotate(-25 43 40)" fill="#fff"/>
 </svg>
