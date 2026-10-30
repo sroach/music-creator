@@ -384,6 +384,9 @@ async fn generate(
         eprintln!("⚠️  Warning: Failed to save metadata: {}", e);
     }
 
+    // Sync the m3u playlist with the new song
+    sync_m3u_playlist(&PathBuf::from(&state.output_dir));
+
     let download_url = format!("{}/download/{}", state.base_path, filename);
 
     (StatusCode::OK, Json(GenerateResponse {
@@ -530,6 +533,50 @@ fn embed_id3_tags(
     Ok(())
 }
 
+/// Sync the m3u playlist file with the current MP3 files in the output directory.
+/// Creates or overwrites playlist.m3u with all valid entries sorted by created_at descending.
+fn sync_m3u_playlist(output_dir: &PathBuf) {
+    let m3u_path = output_dir.join("playlist.m3u");
+
+    let mut songs = Vec::new();
+
+    if let Ok(entries) = fs::read_dir(output_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("json") {
+                if let Ok(content) = fs::read_to_string(&path) {
+                    if let Ok(metadata) = serde_json::from_str::<SongMetadata>(&content) {
+                        let mp3_path = output_dir.join(&metadata.filename);
+                        if mp3_path.exists() {
+                            songs.push(metadata);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Sort by created_at descending (newest first)
+    songs.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+
+    // Build m3u content
+    let mut lines = Vec::new();
+    lines.push("#EXTM3U".to_string());
+    for song in &songs {
+        // Duration in seconds
+        let duration = song.duration as i64;
+        let title = format!("{} - {}", song.artist, song.song_name);
+        lines.push(format!("#EXTINF:{},{}", duration, title));
+        lines.push(song.filename.clone());
+    }
+
+    if let Err(e) = fs::write(&m3u_path, lines.join("\n") + "\n") {
+        eprintln!("⚠️  Warning: Failed to write playlist.m3u: {}", e);
+    } else {
+        println!("🎵 Playlist synced: {} songs in playlist.m3u", songs.len());
+    }
+}
+
 async fn download_file(
     state: axum::extract::State<Arc<AppState>>,
     Path(filename): Path<String>,
@@ -653,6 +700,9 @@ async fn main() -> Result<()> {
         output_dir: output_dir_path.display().to_string(),
         base_path: base_path.clone(),
     });
+
+    // Initialize the m3u playlist on startup if output directory has songs
+    sync_m3u_playlist(&output_dir_path);
 
     println!("🎵 Music Creator starting on http://localhost:{}", port);
     println!("📁 Output directory: {}", state.output_dir);
