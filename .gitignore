@@ -1,0 +1,8 @@
+/target
+/output
+.env
+*.mp3
+*.json
+plantuml-mcp.log
+
+.idea

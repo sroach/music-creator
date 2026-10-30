@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+    <title>Music Creator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            min-height: 100vh;
+            color: #e0e0e0;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(90deg, #ff6b6b, #ffa07a, #ffd700);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #888;
+            margin-bottom: 2rem;
+            font-size: 0.95rem;
+        }
+
+        .form-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 2rem;
+            backdrop-filter: blur(10px);
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: #ccc;
+            font-size: 0.9rem;
+        }
+
+        input[type="text"],
+        input[type="number"],
+        textarea {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 8px;
+            color: #e0e0e0;
+            font-size: 1rem;
+            font-family: inherit;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        input[type="text"]:focus,
+        input[type="number"]:focus,
+        textarea:focus {
+            outline: none;
+            border-color: #ffa07a;
+            box-shadow: 0 0 0 3px rgba(255, 160, 122, 0.15);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 120px;
+        }
+
+        .row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        .row-3 {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr;
+            gap: 1rem;
+            align-items: end;
+        }
+
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 1rem;
+            background: linear-gradient(90deg, #ff6b6b, #ffa07a);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s, transform 0.1s;
+        }
+
+        .btn:hover {
+            opacity: 0.9;
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .status {
+            margin-top: 1.5rem;
+            padding: 1rem;
+            border-radius: 8px;
+            text-align: center;
+            display: none;
+        }
+
+        .status.loading {
+            display: block;
+            background: rgba(255, 165, 0, 0.15);
+            border: 1px solid rgba(255, 165, 0, 0.3);
+            color: #ffa500;
+        }
+
+        .status.success {
+            display: block;
+            background: rgba(0, 200, 83, 0.15);
+            border: 1px solid rgba(0, 200, 83, 0.3);
+            color: #00c853;
+        }
+
+        .status.error {
+            display: block;
+            background: rgba(255, 82, 82, 0.15);
+            border: 1px solid rgba(255, 82, 82, 0.3);
+            color: #ff5252;
+        }
+
+        .download-link {
+            display: inline-block;
+            margin-top: 0.5rem;
+            padding: 0.5rem 1.5rem;
+            background: rgba(0, 200, 83, 0.2);
+            color: #00c853;
+            text-decoration: none;
+            border-radius: 6px;
+            border: 1px solid rgba(0, 200, 83, 0.3);
+            transition: background 0.2s;
+        }
+
+        .download-link:hover {
+            background: rgba(0, 200, 83, 0.3);
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 18px;
+            height: 18px;
+            border: 2px solid rgba(255, 165, 0, 0.3);
+            border-top-color: #ffa500;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            vertical-align: middle;
+            margin-right: 0.5rem;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .hint {
+            font-size: 0.8rem;
+            color: #666;
+            margin-top: 0.25rem;
+        }
+
+        .songs-section {
+            margin-top: 2rem;
+        }
+
+        .songs-section h2 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            color: #ccc;
+        }
+
+        .song-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .song-item {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 1rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background 0.2s;
+        }
+
+        .song-item:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .song-info {
+            flex: 1;
+        }
+
+        .song-title {
+            font-weight: 600;
+            font-size: 1rem;
+            color: #e0e0e0;
+        }
+
+        .song-meta {
+            font-size: 0.85rem;
+            color: #888;
+            margin-top: 0.25rem;
+        }
+
+        .song-download {
+            display: inline-block;
+            padding: 0.4rem 1rem;
+            background: rgba(0, 200, 83, 0.2);
+            color: #00c853;
+            text-decoration: none;
+            border-radius: 6px;
+            border: 1px solid rgba(0, 200, 83, 0.3);
+            font-size: 0.9rem;
+            transition: background 0.2s;
+        }
+
+        .song-download:hover {
+            background: rgba(0, 200, 83, 0.3);
+        }
+
+        .empty-state {
+            text-align: center;
+            color: #666;
+            padding: 2rem;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎵 Music Creator</h1>
+        <p class="subtitle">Generate songs with AI — powered by ACEMusic</p>
+
+        <div class="form-card">
+            <form id="generateForm">
+                <div class="form-group">
+                    <label for="songName">Song Name</label>
+                    <input type="text" id="songName" name="song_name" placeholder="My Awesome Song" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="artist">Artist</label>
+                    <input type="text" id="artist" name="artist" value="AI Generated" placeholder="Artist name">
+                </div>
+
+                <div class="form-group">
+                    <label for="prompt">Style Prompt</label>
+                    <textarea id="prompt" name="prompt" rows="3" placeholder="e.g. indie pop, soft male vocal, warm acoustic guitar, dreamy synth pads, 100 BPM" required></textarea>
+                    <p class="hint">Describe the music style, instrumentation, vocal type, and mood.</p>
+                </div>
+
+                <div class="form-group">
+                    <label for="lyrics">Lyrics</label>
+                    <textarea id="lyrics" name="lyrics" rows="12" placeholder="[verse]&#10;Write your lyrics here...&#10;&#10;[chorus]&#10;Your chorus here..." required></textarea>
+                    <p class="hint">Use section tags like [verse], [chorus], [bridge], [outro].</p>
+                </div>
+
+                <div class="row">
+                    <div class="form-group">
+                        <label for="duration">Duration (seconds)</label>
+                        <input type="number" id="duration" name="duration" value="180" min="30" max="600">
+                    </div>
+                    <div class="form-group">
+                        <label for="bpm">BPM</label>
+                        <input type="number" id="bpm" name="bpm" value="120" min="40" max="240">
+                    </div>
+                </div>
+
+                <button type="submit" class="btn" id="submitBtn">Generate Song</button>
+            </form>
+
+            <div id="status" class="status"></div>
+        </div>
+
+        <div class="songs-section">
+            <h2>🎶 Generated Songs</h2>
+            <div id="songList" class="song-list">
+                <div class="empty-state">No songs generated yet.</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('generateForm');
+        const status = document.getElementById('status');
+        const submitBtn = document.getElementById('submitBtn');
+        const songList = document.getElementById('songList');
+
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        function formatDate(dateStr) {
+            const date = new Date(dateStr);
+            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+        }
+
+        async function loadSongs() {
+            try {
+                const response = await fetch('/list');
+                const songs = await response.json();
+
+                if (songs.length === 0) {
+                    songList.innerHTML = '<div class="empty-state">No songs generated yet.</div>';
+                    return;
+                }
+
+                songList.innerHTML = songs.map(song => `
+                    <div class="song-item">
+                        <div class="song-info">
+                            <div class="song-title">${song.song_name}</div>
+                            <div class="song-meta">
+                                ${song.artist} · ${formatFileSize(song.file_size_bytes)} · ${formatDate(song.created_at)}
+                            </div>
+                        </div>
+                        <a href="${song.download_url}" class="song-download" download>⬇ Download</a>
+                    </div>
+                `).join('');
+            } catch (err) {
+                console.error('Failed to load songs:', err);
+            }
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const payload = {
+                song_name: document.getElementById('songName').value.trim(),
+                artist: document.getElementById('artist').value.trim() || 'AI Generated',
+                prompt: document.getElementById('prompt').value.trim(),
+                lyrics: document.getElementById('lyrics').value.trim(),
+                duration: parseInt(document.getElementById('duration').value) || 180,
+                bpm: parseInt(document.getElementById('bpm').value) || 120
+            };
+
+            // Show loading state
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Generating...';
+            status.className = 'status loading';
+            status.innerHTML = '<span class="spinner"></span> Generating your song... This may take a few minutes.';
+
+            try {
+                const response = await fetch('/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    status.className = 'status success';
+                    status.innerHTML = `
+                        ✅ Song generated successfully!<br>
+                        <a href="${result.download_url}" class="download-link" download>⬇ Download ${result.filename}</a>
+                    `;
+                    // Refresh the song list
+                    loadSongs();
+                } else {
+                    status.className = 'status error';
+                    status.textContent = '❌ ' + (result.error || 'Generation failed');
+                }
+            } catch (err) {
+                status.className = 'status error';
+                status.textContent = '❌ Network error: ' + err.message;
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Generate Song';
+            }
+        });
+
+        // Load songs on page load
+        loadSongs();
+    </script>
+</body>
+</html>
