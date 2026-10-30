@@ -158,20 +158,17 @@
             color: #ff5252;
         }
 
-        .download-link {
-            display: inline-block;
-            margin-top: 0.5rem;
-            padding: 0.5rem 1.5rem;
-            background: rgba(0, 200, 83, 0.2);
-            color: #00c853;
-            text-decoration: none;
-            border-radius: 6px;
-            border: 1px solid rgba(0, 200, 83, 0.3);
-            transition: background 0.2s;
+        .play-section {
+            margin-top: 0.75rem;
+            text-align: center;
         }
 
-        .download-link:hover {
-            background: rgba(0, 200, 83, 0.3);
+        audio {
+            width: 100%;
+            max-width: 400px;
+            height: 40px;
+            border-radius: 8px;
+            outline: none;
         }
 
         .spinner {
@@ -243,20 +240,15 @@
             margin-top: 0.25rem;
         }
 
-        .song-download {
-            display: inline-block;
-            padding: 0.4rem 1rem;
-            background: rgba(0, 200, 83, 0.2);
-            color: #00c853;
-            text-decoration: none;
-            border-radius: 6px;
-            border: 1px solid rgba(0, 200, 83, 0.3);
-            font-size: 0.9rem;
-            transition: background 0.2s;
+        .song-play {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
         }
 
-        .song-download:hover {
-            background: rgba(0, 200, 83, 0.3);
+        .song-play audio {
+            width: 200px;
+            height: 36px;
         }
 
         .empty-state {
@@ -374,7 +366,9 @@
                                 ${song.artist} · ${formatFileSize(song.file_size_bytes)} · ${formatDate(song.created_at)}
                             </div>
                         </div>
-                        <a href="${song.download_url}" class="song-download" download>⬇ Download</a>
+                        <div class="song-play">
+                            <audio controls preload="none" src="${song.download_url}"></audio>
+                        </div>
                     </div>
                 `).join('');
             } catch (err) {
@@ -413,7 +407,9 @@
                     status.className = 'status success';
                     status.innerHTML = `
                         ✅ Song generated successfully!<br>
-                        <a href="${result.download_url}" class="download-link" download>⬇ Download ${result.filename}</a>
+                        <div class="play-section">
+                            <audio controls autoplay preload="none" src="${result.download_url}"></audio>
+                        </div>
                     `;
                     // Refresh the song list
                     loadSongs();

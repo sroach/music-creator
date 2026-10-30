@@ -621,8 +621,14 @@ async fn download_file(
         Ok(contents) => {
             let mut headers = HeaderMap::new();
             headers.insert(
+                "Content-Type",
+                "audio/mpeg"
+                    .parse()
+                    .expect("Content-Type should parse"),
+            );
+            headers.insert(
                 "Content-Disposition",
-                format!("attachment; filename=\"{}\"", filename)
+                format!("inline; filename=\"{}\"", filename)
                     .parse()
                     .expect("Content-Disposition should parse"),
             );
