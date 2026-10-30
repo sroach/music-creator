@@ -533,12 +533,15 @@ fn embed_id3_tags(
     Ok(())
 }
 
-/// Sync the m3u playlist file with the current MP3 files in the output directory.
-/// Creates or overwrites playlist.m3u with all valid entries sorted by created_at descending.
+/// Sync the m3u playlist file with all MP3 files in the output directory.
+/// Songs with .json metadata use that info; orphan MP3s fall back to ID3 tags or filename.
+/// Creates or overwrites playlist.m3u sorted by created_at descending (orphans at the end).
 fn sync_m3u_playlist(output_dir: &PathBuf) {
     let m3u_path = output_dir.join("playlist.m3u");
 
-    let mut songs = Vec::new();
+    // Collect songs from JSON metadata files
+    let mut songs: Vec<SongMetadata> = Vec::new();
+    let mut known_filenames = std::collections::HashSet::new();
 
     if let Ok(entries) = fs::read_dir(output_dir) {
         for entry in entries.flatten() {
@@ -548,6 +551,7 @@ fn sync_m3u_playlist(output_dir: &PathBuf) {
                     if let Ok(metadata) = serde_json::from_str::<SongMetadata>(&content) {
                         let mp3_path = output_dir.join(&metadata.filename);
                         if mp3_path.exists() {
+                            known_filenames.insert(metadata.filename.clone());
                             songs.push(metadata);
                         }
                     }
@@ -556,15 +560,83 @@ fn sync_m3u_playlist(output_dir: &PathBuf) {
         }
     }
 
-    // Sort by created_at descending (newest first)
+    // Find orphan MP3s (no matching JSON metadata) and try to read ID3 tags
+    let mut orphans: Vec<SongMetadata> = Vec::new();
+    if let Ok(entries) = fs::read_dir(output_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("mp3") {
+                let filename = path.file_name().and_then(|f| f.to_str()).unwrap_or("").to_string();
+                if filename.is_empty() || filename == "playlist.m3u" {
+                    continue;
+                }
+                // Skip if already covered by metadata
+                if known_filenames.contains(&filename) {
+                    continue;
+                }
+
+                // Try to read ID3 tags for title/artist
+                let (title, artist) = match Tag::read_from_path(&path) {
+                    Ok(tag) => {
+                        let t = tag.title().map(|s| s.to_string()).unwrap_or_default();
+                        let a = tag.artist().map(|s| s.to_string()).unwrap_or_default();
+                        (t, a)
+                    }
+                    Err(_) => (String::new(), String::new()),
+                };
+
+                // Fallback: derive title from filename
+                let display_title = if title.is_empty() {
+                    let stem = path
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or(&filename);
+                    stem.replace('_', " ")
+                } else {
+                    title
+                };
+                let display_artist = if artist.is_empty() {
+                    "Unknown Artist".to_string()
+                } else {
+                    artist
+                };
+
+                let file_size = path
+                    .metadata()
+                    .ok()
+                    .map(|m| m.len() as usize)
+                    .unwrap_or(0);
+
+                orphans.push(SongMetadata {
+                    song_name: display_title,
+                    artist: display_artist,
+                    prompt: String::new(),
+                    lyrics: String::new(),
+                    duration: 0,
+                    bpm: 0,
+                    model: String::new(),
+                    filename,
+                    created_at: String::new(),
+                    file_size_bytes: file_size,
+                });
+            }
+        }
+    }
+
+    // Sort metadata-backed songs by created_at descending
     songs.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    // Append orphans (no timestamp, so they sort to the end)
+    songs.extend(orphans);
 
     // Build m3u content
     let mut lines = Vec::new();
     lines.push("#EXTM3U".to_string());
     for song in &songs {
-        // Duration in seconds
-        let duration = song.duration as i64;
+        let duration = if song.duration > 0 {
+            song.duration as i64
+        } else {
+            -1
+        };
         let title = format!("{} - {}", song.artist, song.song_name);
         lines.push(format!("#EXTINF:{},{}", duration, title));
         lines.push(song.filename.clone());
