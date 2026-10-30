@@ -367,7 +367,7 @@
                             </div>
                         </div>
                         <div class="song-play">
-                            <audio controls preload="none" src="${song.download_url}"></audio>
+                            <audio controls preload="none" src="${basePath}/download/${song.filename}"></audio>
                         </div>
                     </div>
                 `).join('');
@@ -408,7 +408,7 @@
                     status.innerHTML = `
                         ✅ Song generated successfully!<br>
                         <div class="play-section">
-                            <audio controls autoplay preload="none" src="${result.download_url}"></audio>
+                            <audio controls autoplay preload="none" src="${basePath}/download/${result.filename}"></audio>
                         </div>
                     `;
                     // Refresh the song list
