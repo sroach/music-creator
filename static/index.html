@@ -251,6 +251,45 @@
             height: 36px;
         }
 
+        .btn-download {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.4rem 0.8rem;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            color: #e0e0e0;
+            text-decoration: none;
+            font-size: 0.85rem;
+            font-weight: 500;
+            transition: background 0.2s, border-color 0.2s;
+            white-space: nowrap;
+        }
+
+        .btn-download:hover {
+            background: rgba(255, 255, 255, 0.18);
+            border-color: rgba(255, 160, 122, 0.5);
+            color: #ffa07a;
+        }
+
+        .btn-download svg {
+            width: 16px;
+            height: 16px;
+            fill: currentColor;
+        }
+
+        .play-section {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-top: 0.5rem;
+        }
+
+        .play-section audio {
+            flex: 1;
+        }
+
         .empty-state {
             text-align: center;
             color: #666;
@@ -368,6 +407,10 @@
                         </div>
                         <div class="song-play">
                             <audio controls preload="none" src="${basePath}/download/${song.filename}?t=${song.created_at}"></audio>
+                            <a href="${song.download_url}" class="btn-download" download="${song.filename}">
+                                <svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-6 2h12v2H6z"/></svg>
+                                Download
+                            </a>
                         </div>
                     </div>
                 `).join('');
@@ -410,6 +453,10 @@
                         ✅ Song generated successfully!<br>
                         <div class="play-section">
                             <audio controls autoplay preload="none" src="${basePath}/download/${result.filename}?t=${now}"></audio>
+                            <a href="${result.download_url}" class="btn-download" download="${result.filename}">
+                                <svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-6 2h12v2H6z"/></svg>
+                                Download
+                            </a>
                         </div>
                     `;
                     // Refresh the song list
