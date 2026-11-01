@@ -605,9 +605,15 @@ async fn download_file(
     match fs::read(&filepath) {
         Ok(contents) => {
             let mut headers = HeaderMap::new();
+            // Determine content type based on file extension
+            let content_type = if filename.ends_with(".mp4") {
+                "video/mp4"
+            } else {
+                "audio/mpeg"
+            };
             headers.insert(
                 "Content-Type",
-                "audio/mpeg"
+                content_type
                     .parse()
                     .expect("Content-Type should parse"),
             );
