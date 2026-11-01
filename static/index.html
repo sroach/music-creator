@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-base-path="<BASE_PATH_PLACEHOLDER/>">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -279,6 +279,45 @@
             fill: currentColor;
         }
 
+        .btn-convert {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.4rem 0.8rem;
+            background: rgba(255, 107, 107, 0.2);
+            border: 1px solid rgba(255, 107, 107, 0.4);
+            border-radius: 8px;
+            color: #ff6b6b;
+            text-decoration: none;
+            font-size: 0.85rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s;
+            white-space: nowrap;
+        }
+
+        .btn-convert:hover {
+            background: rgba(255, 107, 107, 0.35);
+            border-color: rgba(255, 107, 107, 0.7);
+        }
+
+        .btn-convert:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-convert svg {
+            width: 16px;
+            height: 16px;
+            fill: currentColor;
+        }
+
+        .song-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
         .play-section {
             display: flex;
             align-items: center;
@@ -353,24 +392,6 @@
     </div>
 
     <script>
-        // Base path injected by the server via data attribute on <html>.
-        // Falls back to deriving from location.pathname if not set.
-        const basePath = (() => {
-            const injected = document.documentElement.getAttribute('data-base-path');
-            if (injected && injected.trim() !== '' && injected !== '<BASE_PATH_PLACEHOLDER/>') {
-                return injected.trim();
-            }
-            // Fallback: derive from current URL
-            const path = location.pathname;
-            const segments = path.split('/').filter(Boolean);
-            const idx = segments.indexOf('index.html');
-            if (idx !== -1) {
-                const base = '/' + segments.slice(0, idx).join('/');
-                return base || '';
-            }
-            return '/' + segments.join('/');
-        })();
-
         const form = document.getElementById('generateForm');
         const status = document.getElementById('status');
         const submitBtn = document.getElementById('submitBtn');
@@ -389,7 +410,7 @@
 
         async function loadSongs() {
             try {
-                const response = await fetch(basePath + '/list');
+                const response = await fetch('list');
                 const songs = await response.json();
 
                 if (songs.length === 0) {
@@ -397,7 +418,22 @@
                     return;
                 }
 
-                songList.innerHTML = songs.map(song => `
+                songList.innerHTML = songs.map(song => {
+                    const hasMp4 = song.mp4_filename != null;
+                    const actions = hasMp4
+                        ? `<a href="download/${song.mp4_filename}" class="btn-download" download="${song.mp4_filename}">
+                                    <svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-6 2h12v2H6z"/></svg>
+                                    Download Video
+                                </a>`
+                        : `<a href="download/${song.filename}" class="btn-download" download="${song.filename}">
+                                    <svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-6 2h12v2H6z"/></svg>
+                                    Download
+                                </a>
+                                <button class="btn-convert" onclick="convertToVideo('${song.filename}', this)" title="Convert to video">
+                                    <svg viewBox="0 0 24 24"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+                                    Convert
+                                </button>`;
+                    return `
                     <div class="song-item">
                         <div class="song-info">
                             <div class="song-title">${song.song_name}</div>
@@ -406,14 +442,14 @@
                             </div>
                         </div>
                         <div class="song-play">
-                            <audio controls preload="none" src="${basePath}/download/${song.filename}?t=${song.created_at}"></audio>
-                            <a href="${song.download_url}" class="btn-download" download="${song.filename}">
-                                <svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-6 2h12v2H6z"/></svg>
-                                Download
-                            </a>
+                            <audio controls preload="none" src="download/${song.filename}?t=${song.created_at}"></audio>
+                            <div class="song-actions">
+                                ${actions}
+                            </div>
                         </div>
                     </div>
-                `).join('');
+                `;
+                }).join('');
             } catch (err) {
                 console.error('Failed to load songs:', err);
             }
@@ -438,7 +474,7 @@
             status.innerHTML = '<span class="spinner"></span> Generating your song... This may take a few minutes.';
 
             try {
-                const response = await fetch(basePath + '/generate', {
+                const response = await fetch('generate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
@@ -452,11 +488,17 @@
                     status.innerHTML = `
                         ✅ Song generated successfully!<br>
                         <div class="play-section">
-                            <audio controls autoplay preload="none" src="${basePath}/download/${result.filename}?t=${now}"></audio>
-                            <a href="${result.download_url}" class="btn-download" download="${result.filename}">
-                                <svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-6 2h12v2H6z"/></svg>
-                                Download
-                            </a>
+                            <audio controls autoplay preload="none" src="download/${result.filename}?t=${now}"></audio>
+                            <div class="song-actions">
+                                <a href="download/${result.filename}" class="btn-download" download="${result.filename}">
+                                    <svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-6 2h12v2H6z"/></svg>
+                                    Download
+                                </a>
+                                <button class="btn-convert" onclick="convertToVideo('${result.filename}', this)" title="Convert to video">
+                                    <svg viewBox="0 0 24 24"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+                                    Convert
+                                </button>
+                            </div>
                         </div>
                     `;
                     // Refresh the song list
@@ -476,6 +518,42 @@
 
         // Load songs on page load
         loadSongs();
+
+        async function convertToVideo(filename, button) {
+            const originalText = button.innerHTML;
+            button.disabled = true;
+            button.innerHTML = '<span class="spinner"></span> Converting...';
+
+            try {
+                const response = await fetch('convert/' + encodeURIComponent(filename), {
+                    method: 'POST',
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    button.innerHTML = originalText;
+                    button.disabled = false;
+                    // Show success message with download link for the MP4
+                    const mp4Filename = result.mp4_filename;
+                    button.parentElement.innerHTML = `
+                        <a href="download/${mp4Filename}" class="btn-download" download="${mp4Filename}">
+                            <svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-6 2h12v2H6z"/></svg>
+                            Download Video
+                        </a>
+                    `;
+                    alert('✅ Video created successfully!');
+                } else {
+                    button.innerHTML = originalText;
+                    button.disabled = false;
+                    alert('❌ Conversion failed: ' + (result.error || 'Unknown error'));
+                }
+            } catch (err) {
+                button.innerHTML = originalText;
+                button.disabled = false;
+                alert('❌ Network error: ' + err.message);
+            }
+        }
     </script>
 </body>
 </html>

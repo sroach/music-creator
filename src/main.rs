@@ -1,3 +1,5 @@
+mod convert;
+
 use anyhow::Result;
 use axum::{
     body::Body,
@@ -7,6 +9,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use convert::{convert_mp3_to_mp4, generate_thumbnail, ConvertResponse};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use chrono::Utc;
@@ -42,10 +45,6 @@ struct CliArgs {
     /// Output directory for generated MP3 files (defaults to "output")
     #[arg(long, default_value = "output")]
     output_dir: String,
-
-    /// Base path prefix for reverse proxy support (e.g. "/music-creator")
-    #[arg(long, default_value = "")]
-    base_path: String,
 }
 
 impl std::fmt::Debug for CliArgs {
@@ -54,7 +53,6 @@ impl std::fmt::Debug for CliArgs {
             .field("api_key", &self.api_key.as_ref().map(|_| "***"))
             .field("port", &self.port)
             .field("output_dir", &self.output_dir)
-            .field("base_path", &self.base_path)
             .finish()
     }
 }
@@ -88,7 +86,6 @@ struct GenerateResponse {
     message: String,
     filename: String,
     size: usize,
-    download_url: String,
 }
 
 /// Error response
@@ -105,7 +102,8 @@ struct SongEntry {
     artist: String,
     created_at: String,
     file_size_bytes: usize,
-    download_url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mp4_filename: Option<String>,
 }
 
 /// Metadata saved alongside the MP3
@@ -152,21 +150,11 @@ struct AudioConfig {
 struct AppState {
     api_key: Option<String>,
     output_dir: String,
-    base_path: String,
 }
 
-async fn index(
-    state: axum::extract::State<Arc<AppState>>,
-) -> impl axum::response::IntoResponse {
+async fn index() -> impl axum::response::IntoResponse {
     match fs::read_to_string("static/index.html") {
-        Ok(content) => {
-            // Inject base path into the HTML so static resources resolve correctly
-            let content = content.replace(
-                "<BASE_PATH_PLACEHOLDER/>",
-                &state.base_path,
-            );
-            Html(content).into_response()
-        }
+        Ok(content) => Html(content).into_response(),
         Err(_) => (
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
             "Failed to load index",
@@ -387,13 +375,10 @@ async fn generate(
     // Sync the m3u playlist with the new song
     sync_m3u_playlist(&PathBuf::from(&state.output_dir));
 
-    let download_url = format!("{}/download/{}", state.base_path, filename);
-
     (StatusCode::OK, Json(GenerateResponse {
         message: "Song generated successfully".to_string(),
         filename,
         size: audio_bytes.len(),
-        download_url,
     })).into_response()
 }
 
@@ -664,13 +649,24 @@ async fn list_files(
                         let mp3_path = output_dir.join(&metadata.filename);
                         if mp3_path.exists() {
                             let file_size = mp3_path.metadata().ok().map(|m| m.len() as usize).unwrap_or(metadata.file_size_bytes);
+
+                            // Check if an MP4 conversion exists
+                            let safe_name = metadata.filename.trim_end_matches(".mp3");
+                            let mp4_filename = format!("{}.mp4", safe_name);
+                            let mp4_exists = output_dir.join(&mp4_filename).exists();
+                            let mp4_filename_field = if mp4_exists {
+                                Some(mp4_filename)
+                            } else {
+                                None
+                            };
+
                             songs.push(SongEntry {
                                 filename: metadata.filename.clone(),
                                 song_name: metadata.song_name,
                                 artist: metadata.artist,
                                 created_at: metadata.created_at,
                                 file_size_bytes: file_size,
-                                download_url: format!("{}/download/{}", state.base_path, metadata.filename),
+                                mp4_filename: mp4_filename_field,
                             });
                         }
                     }
@@ -683,6 +679,56 @@ async fn list_files(
     songs.sort_by(|a, b| b.created_at.cmp(&a.created_at));
 
     (StatusCode::OK, Json(songs)).into_response()
+}
+
+async fn convert_to_video(
+    state: axum::extract::State<Arc<AppState>>,
+    Path(filename): Path<String>,
+) -> Response {
+    use axum::http::StatusCode;
+
+    let output_dir = PathBuf::from(&state.output_dir);
+    let mp3_path = output_dir.join(&filename);
+
+    if !mp3_path.exists() {
+        return (StatusCode::NOT_FOUND, Json(convert::ConvertErrorResponse {
+            error: "MP3 file not found".to_string(),
+        })).into_response();
+    }
+
+    // Load song metadata to get song name and artist
+    let safe_name = filename.trim_end_matches(".mp3");
+    let metadata_path = output_dir.join(format!("{}.json", safe_name));
+    let (song_name, artist) = if let Ok(content) = fs::read_to_string(&metadata_path) {
+        if let Ok(metadata) = serde_json::from_str::<SongMetadata>(&content) {
+            (metadata.song_name, metadata.artist)
+        } else {
+            (safe_name.to_string(), "Unknown".to_string())
+        }
+    } else {
+        (safe_name.to_string(), "Unknown".to_string())
+    };
+
+    // Generate thumbnail from metadata
+    match generate_thumbnail(&song_name, &artist, &output_dir) {
+        Ok(thumbnail_path) => {
+            // Convert MP3 to MP4 using FFmpeg
+            match convert_mp3_to_mp4(&mp3_path, &output_dir, &thumbnail_path) {
+                Ok(mp4_filename) => {
+                    (StatusCode::OK, Json(ConvertResponse {
+                        message: "Video created successfully".to_string(),
+                        mp4_filename,
+                    })).into_response()
+                }
+                Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(convert::ConvertErrorResponse {
+                    error: e.to_string(),
+                })).into_response(),
+            }
+        }
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(convert::ConvertErrorResponse {
+            error: format!("Failed to generate thumbnail: {}", e),
+        })).into_response(),
+    }
 }
 
 #[tokio::main]
@@ -724,13 +770,9 @@ async fn main() -> Result<()> {
     // Ensure output directory exists
     fs::create_dir_all(&output_dir_path).unwrap_or_else(|_| ());
 
-    // Resolve base path from CLI arg or env var
-    let base_path = cli.base_path;
-
     let state = Arc::new(AppState {
         api_key,
         output_dir: output_dir_path.display().to_string(),
-        base_path: base_path.clone(),
     });
 
     // Initialize the m3u playlist on startup if output directory has songs
@@ -738,39 +780,22 @@ async fn main() -> Result<()> {
 
     println!("🎵 Music Creator starting on http://localhost:{}", port);
     println!("📁 Output directory: {}", state.output_dir);
-    if !base_path.is_empty() {
-        println!("🔗 Base path: {}", base_path);
-    }
 
-    // Build the inner router with all API routes
-    let inner = Router::new()
+    // Build the router with all API routes
+    let app = Router::new()
         .route("/", get(index))
         .route("/generate", post(generate))
         .route("/list", get(list_files))
         .route("/download/{filename}", get(download_file))
-        .nest_service("/static", ServeDir::new("static"));
-
-    // If a base path is configured, nest the router under it
-    let app = if base_path.is_empty() {
-        inner
-            .layer(
-                CorsLayer::new()
-                    .allow_origin(Any)
-                    .allow_methods(Any)
-                    .allow_headers(Any),
-            )
-            .with_state(state)
-    } else {
-        Router::new()
-            .nest(&base_path, inner)
-            .layer(
-                CorsLayer::new()
-                    .allow_origin(Any)
-                    .allow_methods(Any)
-                    .allow_headers(Any),
-            )
-            .with_state(state)
-    };
+        .route("/convert/{filename}", post(convert_to_video))
+        .nest_service("/static", ServeDir::new("static"))
+        .layer(
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods(Any)
+                .allow_headers(Any),
+        )
+        .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
