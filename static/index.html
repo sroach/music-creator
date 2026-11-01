@@ -583,6 +583,7 @@
         const status = document.getElementById('status');
         const submitBtn = document.getElementById('submitBtn');
         const songList = document.getElementById('songList');
+        let existingSongs = [];
 
         function formatFileSize(bytes) {
             if (bytes < 1024) return bytes + ' B';
@@ -611,6 +612,7 @@
             try {
                 const response = await fetch('list');
                 const songs = await response.json();
+                existingSongs = songs;
 
                 if (songs.length === 0) {
                     songList.innerHTML = '<div class="empty-state">No songs generated yet.</div>';
@@ -683,6 +685,17 @@
                 duration: parseInt(document.getElementById('duration').value) || 180,
                 bpm: parseInt(document.getElementById('bpm').value) || 120
             };
+
+            // Check if song name already exists
+            const existingSong = existingSongs.find(s => s.song_name === payload.song_name);
+            if (existingSong) {
+                const confirmed = confirm(
+                    `"${payload.song_name}" already exists. This will overwrite the existing song. Continue?`
+                );
+                if (!confirmed) {
+                    return;
+                }
+            }
 
             // Show loading state
             submitBtn.disabled = true;
