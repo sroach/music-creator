@@ -4,84 +4,161 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" href="static/favicon.svg" type="image/svg+xml">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <title>Music Creator</title>
     <style>
-        * {
+        /* ===== Design Tokens ===== */
+        :root {
+            /* Colors */
+            --color-primary: #3B82F6;
+            --color-primary-hover: #2563EB;
+            --color-primary-active: #1D4ED8;
+            --color-secondary: #8B5CF6;
+            --color-success: #16A34A;
+            --color-success-bg: #F0FDF4;
+            --color-success-border: #BBF7D0;
+            --color-warning: #D97706;
+            --color-warning-bg: #FFFBEB;
+            --color-warning-border: #FDE68A;
+            --color-danger: #DC2626;
+            --color-danger-bg: #FEF2F2;
+            --color-danger-border: #FECACA;
+            --color-surface: #FFFFFF;
+            --color-surface-secondary: #F9FAFB;
+            --color-text: #111827;
+            --color-text-secondary: #4B5563;
+            --color-text-tertiary: #6B7280;
+            --color-border: #E5E7EB;
+            --color-border-hover: #D1D5DB;
+
+            /* Typography */
+            --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            --font-size-xs: 12px;
+            --font-size-sm: 14px;
+            --font-size-base: 16px;
+            --font-size-md: 18px;
+            --font-size-lg: 24px;
+            --font-size-xl: 30px;
+            --font-size-2xl: 36px;
+            --font-weight-normal: 400;
+            --font-weight-medium: 500;
+            --font-weight-semibold: 600;
+            --font-weight-bold: 700;
+
+            /* Spacing */
+            --space-1: 4px;
+            --space-2: 8px;
+            --space-3: 12px;
+            --space-4: 16px;
+            --space-5: 24px;
+            --space-6: 32px;
+
+            /* Border Radius */
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --radius-lg: 16px;
+
+            /* Shadows */
+            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+        }
+
+        /* ===== Reset & Base ===== */
+        *, *::before, *::after {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            font-family: var(--font-family);
+            font-size: var(--font-size-base);
+            font-weight: var(--font-weight-normal);
+            color: var(--color-text);
+            background-color: var(--color-surface-secondary);
             min-height: 100vh;
-            color: #e0e0e0;
-            padding: 2rem;
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }
 
+        /* ===== Layout ===== */
         .container {
             max-width: 800px;
             margin: 0 auto;
+            padding: var(--space-6) var(--space-5);
         }
 
-        h1 {
+        /* ===== Header ===== */
+        .header {
             text-align: center;
-            font-size: 2.5rem;
-            margin-bottom: 0.5rem;
-            background: linear-gradient(90deg, #ff6b6b, #ffa07a, #ffd700);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+            margin-bottom: var(--space-6);
         }
 
-        .subtitle {
-            text-align: center;
-            color: #888;
-            margin-bottom: 2rem;
-            font-size: 0.95rem;
+        .header h1 {
+            font-size: var(--font-size-2xl);
+            font-weight: var(--font-weight-bold);
+            color: var(--color-text);
+            margin-bottom: var(--space-2);
+            letter-spacing: -0.025em;
         }
 
-        .form-card {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 16px;
-            padding: 2rem;
-            backdrop-filter: blur(10px);
+        .header .subtitle {
+            font-size: var(--font-size-sm);
+            color: var(--color-text-secondary);
+            font-weight: var(--font-weight-normal);
         }
 
+        /* ===== Card ===== */
+        .card {
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-lg);
+            padding: var(--space-6);
+            box-shadow: var(--shadow-sm);
+        }
+
+        /* ===== Form ===== */
         .form-group {
-            margin-bottom: 1.5rem;
+            margin-bottom: var(--space-5);
         }
 
         label {
             display: block;
-            margin-bottom: 0.5rem;
-            font-weight: 600;
-            color: #ccc;
-            font-size: 0.9rem;
+            margin-bottom: var(--space-2);
+            font-weight: var(--font-weight-medium);
+            color: var(--color-text);
+            font-size: var(--font-size-sm);
         }
 
         input[type="text"],
         input[type="number"],
         textarea {
             width: 100%;
-            padding: 0.75rem 1rem;
-            background: rgba(255, 255, 255, 0.08);
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            border-radius: 8px;
-            color: #e0e0e0;
-            font-size: 1rem;
-            font-family: inherit;
-            transition: border-color 0.2s, box-shadow 0.2s;
+            padding: var(--space-3) var(--space-4);
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-sm);
+            color: var(--color-text);
+            font-size: var(--font-size-base);
+            font-family: var(--font-family);
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        input[type="text"]:hover,
+        input[type="number"]:hover,
+        textarea:hover {
+            border-color: var(--color-border-hover);
         }
 
         input[type="text"]:focus,
         input[type="number"]:focus,
         textarea:focus {
             outline: none;
-            border-color: #ffa07a;
-            box-shadow: 0 0 0 3px rgba(255, 160, 122, 0.15);
+            border-color: var(--color-primary);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
         }
 
         textarea {
@@ -92,264 +169,367 @@
         .row {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 1rem;
+            gap: var(--space-4);
         }
 
-        .row-3 {
-            display: grid;
-            grid-template-columns: 2fr 1fr 1fr;
-            gap: 1rem;
-            align-items: end;
+        .hint {
+            font-size: var(--font-size-xs);
+            color: var(--color-text-tertiary);
+            margin-top: var(--space-1);
         }
 
+        /* ===== Buttons ===== */
         .btn {
             display: block;
             width: 100%;
-            padding: 1rem;
-            background: linear-gradient(90deg, #ff6b6b, #ffa07a);
-            color: #fff;
+            padding: var(--space-3) var(--space-4);
+            background: var(--color-primary);
+            color: #FFFFFF;
             border: none;
-            border-radius: 8px;
-            font-size: 1.1rem;
-            font-weight: 600;
+            border-radius: var(--radius-sm);
+            font-size: var(--font-size-base);
+            font-weight: var(--font-weight-semibold);
+            font-family: var(--font-family);
             cursor: pointer;
-            transition: opacity 0.2s, transform 0.1s;
+            transition: background-color 0.15s ease, transform 0.1s ease;
         }
 
         .btn:hover {
-            opacity: 0.9;
+            background: var(--color-primary-hover);
+        }
+
+        .btn:focus-visible {
+            outline: 2px solid var(--color-primary);
+            outline-offset: 2px;
         }
 
         .btn:active {
+            background: var(--color-primary-active);
             transform: scale(0.98);
         }
 
         .btn:disabled {
+            background: var(--color-border);
+            color: var(--color-text-tertiary);
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-1);
+            padding: var(--space-2) var(--space-3);
+            background: transparent;
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-sm);
+            color: var(--color-text-secondary);
+            text-decoration: none;
+            font-size: var(--font-size-sm);
+            font-weight: var(--font-weight-medium);
+            font-family: var(--font-family);
+            cursor: pointer;
+            transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+            white-space: nowrap;
+        }
+
+        .btn-secondary:hover {
+            background: var(--color-surface-secondary);
+            border-color: var(--color-border-hover);
+            color: var(--color-text);
+        }
+
+        .btn-secondary:focus-visible {
+            outline: 2px solid var(--color-primary);
+            outline-offset: 2px;
+        }
+
+        .btn-secondary:disabled {
             opacity: 0.5;
             cursor: not-allowed;
         }
 
+        .btn-secondary svg {
+            width: 16px;
+            height: 16px;
+            fill: currentColor;
+        }
+
+        .btn-accent {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-1);
+            padding: var(--space-2) var(--space-3);
+            background: transparent;
+            border: 1px solid var(--color-secondary);
+            border-radius: var(--radius-sm);
+            color: var(--color-secondary);
+            text-decoration: none;
+            font-size: var(--font-size-sm);
+            font-weight: var(--font-weight-medium);
+            font-family: var(--font-family);
+            cursor: pointer;
+            transition: background-color 0.15s ease, border-color 0.15s ease;
+            white-space: nowrap;
+        }
+
+        .btn-accent:hover {
+            background: rgba(139, 92, 246, 0.08);
+            border-color: var(--color-secondary);
+        }
+
+        .btn-accent:focus-visible {
+            outline: 2px solid var(--color-secondary);
+            outline-offset: 2px;
+        }
+
+        .btn-accent:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-accent svg {
+            width: 16px;
+            height: 16px;
+            fill: currentColor;
+        }
+
+        /* ===== Status Messages ===== */
         .status {
-            margin-top: 1.5rem;
-            padding: 1rem;
-            border-radius: 8px;
+            margin-top: var(--space-5);
+            padding: var(--space-4);
+            border-radius: var(--radius-sm);
             text-align: center;
             display: none;
+            font-size: var(--font-size-sm);
+            font-weight: var(--font-weight-medium);
+        }
+
+        .status[role="status"] {
+            display: block;
         }
 
         .status.loading {
-            display: block;
-            background: rgba(255, 165, 0, 0.15);
-            border: 1px solid rgba(255, 165, 0, 0.3);
-            color: #ffa500;
+            background: var(--color-warning-bg);
+            border: 1px solid var(--color-warning-border);
+            color: var(--color-warning);
         }
 
         .status.success {
-            display: block;
-            background: rgba(0, 200, 83, 0.15);
-            border: 1px solid rgba(0, 200, 83, 0.3);
-            color: #00c853;
+            background: var(--color-success-bg);
+            border: 1px solid var(--color-success-border);
+            color: var(--color-success);
         }
 
         .status.error {
-            display: block;
-            background: rgba(255, 82, 82, 0.15);
-            border: 1px solid rgba(255, 82, 82, 0.3);
-            color: #ff5252;
+            background: var(--color-danger-bg);
+            border: 1px solid var(--color-danger-border);
+            color: var(--color-danger);
         }
 
-        .play-section {
-            margin-top: 0.75rem;
-            text-align: center;
-        }
-
+        /* ===== Media Players ===== */
         audio {
             width: 100%;
             max-width: 400px;
-            height: 40px;
-            border-radius: 8px;
+            height: 48px;
+            border-radius: var(--radius-sm);
             outline: none;
         }
 
+        video {
+            width: 100%;
+            max-width: 320px;
+            border-radius: var(--radius-sm);
+            outline: none;
+            background: var(--color-surface-secondary);
+        }
+
+        .play-section {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: var(--space-3);
+            margin-top: var(--space-3);
+            width: 100%;
+        }
+
+        .play-section .song-player-card {
+            width: 100%;
+        }
+
+        .play-section .song-actions {
+            width: 100%;
+        }
+
+        .play-section .song-actions .btn-secondary,
+        .play-section .song-actions .btn-accent {
+            flex: 1;
+            justify-content: center;
+        }
+
+        /* ===== Spinner ===== */
         .spinner {
             display: inline-block;
             width: 18px;
             height: 18px;
-            border: 2px solid rgba(255, 165, 0, 0.3);
-            border-top-color: #ffa500;
+            border: 2px solid rgba(217, 119, 6, 0.3);
+            border-top-color: var(--color-warning);
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
             vertical-align: middle;
-            margin-right: 0.5rem;
+            margin-right: var(--space-2);
         }
 
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
 
-        .hint {
-            font-size: 0.8rem;
-            color: #666;
-            margin-top: 0.25rem;
-        }
-
+        /* ===== Songs Section ===== */
         .songs-section {
-            margin-top: 2rem;
+            margin-top: var(--space-6);
         }
 
         .songs-section h2 {
-            font-size: 1.5rem;
-            margin-bottom: 1rem;
-            color: #ccc;
+            font-size: var(--font-size-lg);
+            font-weight: var(--font-weight-semibold);
+            color: var(--color-text);
+            margin-bottom: var(--space-4);
+            letter-spacing: -0.025em;
         }
 
         .song-list {
             display: flex;
             flex-direction: column;
-            gap: 0.75rem;
+            gap: var(--space-3);
         }
 
         .song-item {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            padding: 1rem 1.5rem;
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-md);
+            padding: var(--space-4) var(--space-5);
             display: flex;
             justify-content: space-between;
             align-items: center;
-            transition: background 0.2s;
+            gap: var(--space-4);
+            transition: box-shadow 0.15s ease;
         }
 
         .song-item:hover {
-            background: rgba(255, 255, 255, 0.08);
+            box-shadow: var(--shadow-md);
         }
 
         .song-info {
             flex: 1;
+            min-width: 0;
         }
 
         .song-title {
-            font-weight: 600;
-            font-size: 1rem;
-            color: #e0e0e0;
+            font-weight: var(--font-weight-semibold);
+            font-size: var(--font-size-base);
+            color: var(--color-text);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .song-meta {
-            font-size: 0.85rem;
-            color: #888;
-            margin-top: 0.25rem;
+            font-size: var(--font-size-sm);
+            color: var(--color-text-secondary);
+            margin-top: var(--space-1);
         }
 
         .song-play {
             display: flex;
-            align-items: center;
-            gap: 0.5rem;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: var(--space-3);
+            flex-shrink: 0;
         }
 
-        .song-play audio {
-            width: 200px;
-            height: 36px;
+        .song-player-card {
+            background: var(--color-surface-secondary);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-sm);
+            padding: var(--space-3);
+            width: 288px;
         }
 
-        .song-play video {
-            width: 250px;
-            height: 140px;
-            border-radius: 8px;
-            outline: none;
+        .song-player-card audio {
+            width: 100%;
+            height: 40px;
         }
 
-        .btn-download {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.35rem;
-            padding: 0.4rem 0.8rem;
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 8px;
-            color: #e0e0e0;
-            text-decoration: none;
-            font-size: 0.85rem;
-            font-weight: 500;
-            transition: background 0.2s, border-color 0.2s;
-            white-space: nowrap;
-        }
-
-        .btn-download:hover {
-            background: rgba(255, 255, 255, 0.18);
-            border-color: rgba(255, 160, 122, 0.5);
-            color: #ffa07a;
-        }
-
-        .btn-download svg {
-            width: 16px;
-            height: 16px;
-            fill: currentColor;
-        }
-
-        .btn-convert {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.35rem;
-            padding: 0.4rem 0.8rem;
-            background: rgba(255, 107, 107, 0.2);
-            border: 1px solid rgba(255, 107, 107, 0.4);
-            border-radius: 8px;
-            color: #ff6b6b;
-            text-decoration: none;
-            font-size: 0.85rem;
-            font-weight: 500;
-            cursor: pointer;
-            transition: background 0.2s, border-color 0.2s;
-            white-space: nowrap;
-        }
-
-        .btn-convert:hover {
-            background: rgba(255, 107, 107, 0.35);
-            border-color: rgba(255, 107, 107, 0.7);
-        }
-
-        .btn-convert:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        .btn-convert svg {
-            width: 16px;
-            height: 16px;
-            fill: currentColor;
+        .song-player-card video {
+            width: 100%;
+            border-radius: var(--radius-sm);
         }
 
         .song-actions {
             display: flex;
             align-items: center;
-            gap: 0.5rem;
+            gap: var(--space-2);
+            width: 288px;
         }
 
-        .play-section {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            margin-top: 0.5rem;
-        }
-
-        .play-section audio {
+        .song-actions .btn-secondary,
+        .song-actions .btn-accent {
             flex: 1;
+            justify-content: center;
         }
 
+        /* ===== Empty State ===== */
         .empty-state {
             text-align: center;
-            color: #666;
-            padding: 2rem;
-            font-style: italic;
+            color: var(--color-text-tertiary);
+            padding: var(--space-6);
+            font-size: var(--font-size-sm);
+        }
+
+        /* ===== Responsive ===== */
+        @media (max-width: 640px) {
+            .container {
+                padding: var(--space-4) var(--space-4);
+            }
+
+            .card {
+                padding: var(--space-4);
+            }
+
+            .row {
+                grid-template-columns: 1fr;
+            }
+
+            .song-item {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .song-play {
+                width: 100%;
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .song-player-card {
+                width: 100%;
+            }
+
+            .song-actions {
+                width: 100%;
+            }
+
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🎵 Music Creator</h1>
-        <p class="subtitle">Generate songs with AI — powered by ACEMusic</p>
+        <header class="header">
+            <h1>Music Creator</h1>
+            <p class="subtitle">Generate songs with AI — powered by ACEMusic</p>
+        </header>
 
-        <div class="form-card">
+        <div class="card">
             <form id="generateForm">
                 <div class="form-group">
                     <label for="songName">Song Name</label>
@@ -387,15 +567,15 @@
                 <button type="submit" class="btn" id="submitBtn">Generate Song</button>
             </form>
 
-            <div id="status" class="status"></div>
+            <div id="status" class="status" role="status" aria-live="polite"></div>
         </div>
 
-        <div class="songs-section">
-            <h2>🎶 Generated Songs</h2>
+        <section class="songs-section">
+            <h2>Generated Songs</h2>
             <div id="songList" class="song-list">
                 <div class="empty-state">No songs generated yet.</div>
             </div>
-        </div>
+        </section>
     </div>
 
     <script>
@@ -415,6 +595,18 @@
             return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
         }
 
+        function showStatus(type, message) {
+            status.className = 'status ' + type;
+            status.setAttribute('role', 'status');
+            status.innerHTML = message;
+        }
+
+        function hideStatus() {
+            status.className = 'status';
+            status.removeAttribute('role');
+            status.innerHTML = '';
+        }
+
         async function loadSongs() {
             try {
                 const response = await fetch('list');
@@ -427,22 +619,29 @@
 
                 songList.innerHTML = songs.map(song => {
                     const hasMp4 = song.mp4_filename != null;
-                    const actions = hasMp4
-                        ? `<a href="download/${song.mp4_filename}" class="btn-download" download="${song.mp4_filename}">
+                    const audioDownload = `<a href="download/${song.filename}" class="btn-secondary" download="${song.filename}">
+                                    <svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-6 2h12v2H6z"/></svg>
+                                    Download Audio
+                                </a>`;
+                    let playerHtml = '';
+                    let videoActions = '';
+                    if (hasMp4) {
+                        playerHtml = `<div class="song-player-card">
+                            <video controls preload="none" src="download/${song.mp4_filename}?t=${song.created_at}"></video>
+                        </div>`;
+                        videoActions = `<a href="download/${song.mp4_filename}" class="btn-secondary" download="${song.mp4_filename}">
                                     <svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-6 2h12v2H6z"/></svg>
                                     Download Video
-                                </a>`
-                        : `<a href="download/${song.filename}" class="btn-download" download="${song.filename}">
-                                    <svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-6 2h12v2H6z"/></svg>
-                                    Download
-                                </a>
-                                <button class="btn-convert" onclick="convertToVideo('${song.filename}', this)" title="Convert to video">
+                                </a>`;
+                    } else {
+                        playerHtml = `<div class="song-player-card">
+                            <audio controls preload="none" src="download/${song.filename}?t=${song.created_at}"></audio>
+                        </div>`;
+                        videoActions = `<button class="btn-accent" data-convert="${song.filename}" title="Convert to video">
                                     <svg viewBox="0 0 24 24"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
                                     Convert
                                 </button>`;
-                    const media = hasMp4
-                        ? `<video controls preload="none" src="download/${song.mp4_filename}?t=${song.created_at}"></video>`
-                        : `<audio controls preload="none" src="download/${song.filename}?t=${song.created_at}"></audio>`;
+                    }
                     return `
                     <div class="song-item">
                         <div class="song-info">
@@ -452,14 +651,22 @@
                             </div>
                         </div>
                         <div class="song-play">
-                            ${media}
+                            ${playerHtml}
                             <div class="song-actions">
-                                ${actions}
+                                ${audioDownload}
+                                ${videoActions}
                             </div>
                         </div>
                     </div>
                 `;
                 }).join('');
+
+                // Attach event listeners to convert buttons
+                songList.querySelectorAll('[data-convert]').forEach(button => {
+                    button.addEventListener('click', function() {
+                        convertToVideo(this.dataset.convert, this);
+                    });
+                });
             } catch (err) {
                 console.error('Failed to load songs:', err);
             }
@@ -480,8 +687,7 @@
             // Show loading state
             submitBtn.disabled = true;
             submitBtn.textContent = 'Generating...';
-            status.className = 'status loading';
-            status.innerHTML = '<span class="spinner"></span> Generating your song... This may take a few minutes.';
+            showStatus('loading', '<span class="spinner"></span> Generating your song...');
 
             try {
                 const response = await fetch('generate', {
@@ -493,33 +699,36 @@
                 const result = await response.json();
 
                 if (response.ok) {
-                    status.className = 'status success';
                     const now = Date.now();
-                    status.innerHTML = `
-                        ✅ Song generated successfully!<br>
+                    showStatus('success', `
+                        Song generated successfully.<br>
                         <div class="play-section">
-                            <audio controls autoplay preload="none" src="download/${result.filename}?t=${now}"></audio>
+                            <div class="song-player-card">
+                                <audio controls autoplay preload="none" src="download/${result.filename}?t=${now}"></audio>
+                            </div>
                             <div class="song-actions">
-                                <a href="download/${result.filename}" class="btn-download" download="${result.filename}">
+                                <a href="download/${result.filename}" class="btn-secondary" download="${result.filename}">
                                     <svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-6 2h12v2H6z"/></svg>
                                     Download
                                 </a>
-                                <button class="btn-convert" onclick="convertToVideo('${result.filename}', this)" title="Convert to video">
+                                <button class="btn-accent" data-convert="${result.filename}" title="Convert to video">
                                     <svg viewBox="0 0 24 24"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
                                     Convert
                                 </button>
                             </div>
                         </div>
-                    `;
+                    `);
+                    // Attach convert button listener in success area
+                    status.querySelector('[data-convert]').addEventListener('click', function() {
+                        convertToVideo(this.dataset.convert, this);
+                    });
                     // Refresh the song list
                     loadSongs();
                 } else {
-                    status.className = 'status error';
-                    status.textContent = '❌ ' + (result.error || 'Generation failed');
+                    showStatus('error', result.error || 'Generation failed');
                 }
             } catch (err) {
-                status.className = 'status error';
-                status.textContent = '❌ Network error: ' + err.message;
+                showStatus('error', 'Network error: ' + err.message);
             } finally {
                 submitBtn.disabled = false;
                 submitBtn.textContent = 'Generate Song';
@@ -542,28 +751,17 @@
                 const result = await response.json();
 
                 if (response.ok) {
-                    button.innerHTML = originalText;
-                    button.disabled = false;
-                    // Show success message with download link for the MP4
-                    const mp4Filename = result.mp4_filename;
-                    const now = Date.now();
-                    button.parentElement.innerHTML = `
-                        <video controls preload="none" src="download/${mp4Filename}?t=${now}"></video>
-                        <a href="download/${mp4Filename}" class="btn-download" download="${mp4Filename}">
-                            <svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-6 2h12v2H6z"/></svg>
-                            Download Video
-                        </a>
-                    `;
-                    alert('✅ Video created successfully!');
+                    // Refresh the song list to update the persistent view
+                    loadSongs();
                 } else {
                     button.innerHTML = originalText;
                     button.disabled = false;
-                    alert('❌ Conversion failed: ' + (result.error || 'Unknown error'));
+                    showStatus('error', 'Conversion failed: ' + (result.error || 'Unknown error'));
                 }
             } catch (err) {
                 button.innerHTML = originalText;
                 button.disabled = false;
-                alert('❌ Network error: ' + err.message);
+                showStatus('error', 'Network error: ' + err.message);
             }
         }
     </script>
