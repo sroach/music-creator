@@ -1,7 +1,7 @@
 use anyhow::Result;
 use diffusion_rs::{
     api::gen_img,
-    preset::{Preset, PresetBuilder},
+    preset::{AnimaWeight, Preset, PresetBuilder},
 };
 use std::path::{Path, PathBuf};
 
@@ -17,7 +17,7 @@ pub struct ImageGenConfig {
 impl Default for ImageGenConfig {
     fn default() -> Self {
         Self {
-            steps: 25,
+            steps: 30,
             seed: 299792458,
         }
     }
@@ -29,7 +29,7 @@ impl ImageGenConfig {
         let steps = std::env::var("IMAGE_GEN_STEPS")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(25);
+            .unwrap_or(30);
 
         let seed = std::env::var("IMAGE_GEN_SEED")
             .ok()
@@ -86,7 +86,7 @@ pub fn generate_image_from_prompt(
 
     // Build preset with automatic model download from Hugging Face
     let (cfg, mut model_cfg) = PresetBuilder::default()
-        .preset(Preset::SDXLBase1_0)
+        .preset(Preset::Anima(AnimaWeight::Q8_0))
         .prompt(prompt)
         .with_modifier(move |mut builder| {
             builder.0.steps(steps).seed(seed).output(thumb_path_clone);
