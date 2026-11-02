@@ -789,9 +789,6 @@
     </div>
 
     <script>
-        // Detect base path for reverse proxy support (e.g. /music-creator/)
-        const basePath = window.location.pathname.replace(/[^/]+$/, '') || '/';
-
         const form = document.getElementById('generateForm');
         const status = document.getElementById('status');
         const submitBtn = document.getElementById('submitBtn');
@@ -872,7 +869,7 @@
 
         async function loadSongs() {
             try {
-                const response = await fetch(basePath + 'list');
+                const response = await fetch('list');
                 const songs = await response.json();
 
                 // Check if we can do a lightweight refresh (only update button states)
@@ -896,7 +893,7 @@
                 songList.innerHTML = songs.map(song => {
                     const hasMp4 = song.mp4_filename != null;
                     const hasThumbnail = song.has_thumbnail === true;
-                    const audioDownload = `<a href="${basePath}download/${song.filename}" class="btn-secondary" download="${song.filename}">
+                    const audioDownload = `<a href="download/${song.filename}" class="btn-secondary" download="${song.filename}">
                                     <svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-6 2h12v2H6z"/></svg>
                                     MP3
                                 </a>`;
@@ -904,7 +901,7 @@
                     let videoActions = '';
                     if (hasMp4) {
                         playerHtml = `<div class="song-player-card">
-                            <video controls preload="none" src="${basePath}download/${song.mp4_filename}?t=${song.created_at}"></video>
+                            <video controls preload="none" src="download/${song.mp4_filename}?t=${song.created_at}"></video>
                         </div>`;
                         let thumbBtn = '';
                         if (hasThumbnail) {
@@ -913,7 +910,7 @@
                                     View
                                 </button>`;
                         }
-                        videoActions = `${thumbBtn}<a href="${basePath}download/${song.mp4_filename}" class="btn-secondary" download="${song.mp4_filename}">
+                        videoActions = `${thumbBtn}<a href="download/${song.mp4_filename}" class="btn-secondary" download="${song.mp4_filename}">
                                     <svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-6 2h12v2H6z"/></svg>
                                     Video
                                 </a>`;
@@ -921,7 +918,7 @@
                         const safeName = song.filename.replace('.mp3', '');
                         const thumbFilename = safeName + '.png';
                         playerHtml = `<div class="song-player-card">
-                            <audio controls preload="none" src="${basePath}download/${song.filename}?t=${song.created_at}"></audio>
+                            <audio controls preload="none" src="download/${song.filename}?t=${song.created_at}"></audio>
                         </div>`;
                         let thumbBtn = '';
                         if (hasThumbnail) {
@@ -1027,7 +1024,7 @@
             showStatus('loading', '<span class="spinner"></span> Generating your song...');
 
             try {
-                const response = await fetch(basePath + 'generate', {
+                const response = await fetch('generate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
@@ -1041,10 +1038,10 @@
                         Song generated successfully.<br>
                         <div class="play-section">
                             <div class="song-player-card">
-                                <audio controls autoplay preload="none" src="${basePath}download/${result.filename}?t=${now}"></audio>
+                                <audio controls autoplay preload="none" src="download/${result.filename}?t=${now}"></audio>
                             </div>
                             <div class="song-actions">
-                                <a href="${basePath}download/${result.filename}" class="btn-secondary" download="${result.filename}">
+                                <a href="download/${result.filename}" class="btn-secondary" download="${result.filename}">
                                     <svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-6 2h12v2H6z"/></svg>
                                     Download
                                 </a>
@@ -1107,7 +1104,7 @@
 
         async function fetchSongDetails(filename) {
             try {
-                const response = await fetch(basePath + 'song/' + encodeURIComponent(filename));
+                const response = await fetch('song/' + encodeURIComponent(filename));
                 if (!response.ok) {
                     showStatus('error', 'Failed to load song details');
                     return;
@@ -1169,7 +1166,7 @@
             button.innerHTML = '<span class="spinner"></span> Converting...';
 
             try {
-                const response = await fetch(basePath + 'convert/' + encodeURIComponent(filename), {
+                const response = await fetch('convert/' + encodeURIComponent(filename), {
                     method: 'POST',
                 });
 
@@ -1196,7 +1193,7 @@
             button.innerHTML = '<span class="spinner"></span> Generating...';
 
             try {
-                const response = await fetch(basePath + 'thumbnail/' + encodeURIComponent(filename), {
+                const response = await fetch('thumbnail/' + encodeURIComponent(filename), {
                     method: 'POST',
                 });
 
@@ -1243,7 +1240,7 @@
         function viewThumbnail(filename) {
             const safeName = filename.replace('.mp3', '');
             const thumbFilename = safeName + '.png';
-            const url = basePath + 'download/' + encodeURIComponent(thumbFilename) + '?t=' + Date.now();
+            const url = 'download/' + encodeURIComponent(thumbFilename) + '?t=' + Date.now();
             thumbnailModalImage.src = url;
             thumbnailModalDownload.href = url;
             thumbnailModalDownload.download = thumbFilename;
@@ -1301,7 +1298,7 @@
             showStatus('loading', '<span class="spinner"></span> Generating lyrics from AI...');
 
             try {
-                const response = await fetch(basePath + 'generate-lyrics', {
+                const response = await fetch('generate-lyrics', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ topic, style }),
