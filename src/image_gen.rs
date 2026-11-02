@@ -1,8 +1,7 @@
 use anyhow::Result;
 use diffusion_rs::{
     api::gen_img,
-    modifier::taesd_xl,
-    preset::{AnimaWeight, Preset, PresetBuilder},
+    preset::{Preset, PresetBuilder},
 };
 use std::path::{Path, PathBuf};
 
@@ -18,7 +17,7 @@ pub struct ImageGenConfig {
 impl Default for ImageGenConfig {
     fn default() -> Self {
         Self {
-            steps: 30,
+            steps: 25,
             seed: 299792458,
         }
     }
@@ -30,7 +29,7 @@ impl ImageGenConfig {
         let steps = std::env::var("IMAGE_GEN_STEPS")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(30);
+            .unwrap_or(25);
 
         let seed = std::env::var("IMAGE_GEN_SEED")
             .ok()
@@ -86,11 +85,9 @@ pub fn generate_image_from_prompt(
     let seed = config.seed;
 
     // Build preset with automatic model download from Hugging Face
-    // TAESD XL replaces the VAE decoder to avoid Metal GPU crashes with Anima's VAE
     let (cfg, mut model_cfg) = PresetBuilder::default()
-        .preset(Preset::Anima(AnimaWeight::Q8_0))
+        .preset(Preset::StableDiffusion1_5)
         .prompt(prompt)
-        .with_modifier(taesd_xl)
         .with_modifier(move |mut builder| {
             builder.0.steps(steps).seed(seed).output(thumb_path_clone);
             Ok(builder)
