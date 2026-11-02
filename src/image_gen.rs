@@ -65,10 +65,12 @@ pub fn build_image_prompt(song_name: &str, artist: &str, prompt: &str) -> String
     parts.join(", ")
 }
 
-/// Generates an image from a text prompt using Stable Diffusion
+/// Generates an image from a text prompt using Stable Diffusion.
+/// The thumbnail is saved with the safe name as the filename (e.g., `Song_Name.png`).
 pub fn generate_image_from_prompt(
     config: &ImageGenConfig,
     prompt: &str,
+    safe_name: &str,
     output_path: &Path,
 ) -> Result<PathBuf> {
     println!("🎨 Generating image using diffusion-rs...");
@@ -76,7 +78,8 @@ pub fn generate_image_from_prompt(
 
     let start = std::time::Instant::now();
 
-    let thumb_path = output_path.join("thumbnail.png");
+    let thumb_filename = format!("{}.png", safe_name);
+    let thumb_path = output_path.join(&thumb_filename);
     let thumb_path_clone = thumb_path.clone();
     let steps = config.steps;
     let seed = config.seed;

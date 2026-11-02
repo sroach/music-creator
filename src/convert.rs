@@ -18,10 +18,11 @@ pub struct ConvertErrorResponse {
 
 /// Generates a thumbnail image from song metadata and saves it as PNG.
 /// Returns the path to the generated thumbnail.
+/// The thumbnail is saved with the safe name as the filename (e.g., `Song_Name.png`).
 ///
 /// This is the synchronous fallback — uses procedural generation only.
 pub fn generate_thumbnail(
-    _song_name: &str,
+    safe_name: &str,
     _artist: &str,
     output_path: &Path,
 ) -> Result<PathBuf> {
@@ -54,7 +55,8 @@ pub fn generate_thumbnail(
     // and rely on the gradient + music note design. The user can add a
     // font file later if they want text on thumbnails.
 
-    let thumb_path = output_path.join("thumbnail.png");
+    let thumb_filename = format!("{}.png", safe_name);
+    let thumb_path = output_path.join(&thumb_filename);
     img.save_with_format(&thumb_path, ImageFormat::Png)?;
     Ok(thumb_path)
 }

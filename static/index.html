@@ -456,7 +456,9 @@
             flex-direction: column;
             align-items: flex-end;
             gap: var(--space-3);
-            flex-shrink: 0;
+            flex-shrink: 1;
+            min-width: 288px;
+            max-width: 40%;
         }
 
         .song-player-card {
@@ -464,7 +466,8 @@
             border: 1px solid var(--color-border);
             border-radius: var(--radius-sm);
             padding: var(--space-3);
-            width: 288px;
+            width: 100%;
+            min-width: 0;
         }
 
         .song-player-card audio {
@@ -481,12 +484,14 @@
             display: flex;
             align-items: center;
             gap: var(--space-2);
-            width: 288px;
+            width: 100%;
+            min-width: 0;
         }
 
         .song-actions .btn-secondary,
         .song-actions .btn-accent {
             flex: 1;
+            min-width: 0;
             justify-content: center;
         }
 
@@ -592,6 +597,22 @@
             justify-content: flex-end;
             gap: var(--space-2);
             margin-top: var(--space-5);
+        }
+
+        /* ===== Thumbnail Modal ===== */
+        .thumbnail-modal-image {
+            max-width: 100%;
+            max-height: 70vh;
+            border-radius: var(--radius-sm);
+            display: block;
+            margin: 0 auto;
+        }
+
+        .thumbnail-modal-actions {
+            display: flex;
+            justify-content: center;
+            gap: var(--space-3);
+            margin-top: var(--space-4);
         }
 
         /* ===== Empty State ===== */
@@ -745,6 +766,28 @@
         </div>
     </div>
 
+    <!-- Thumbnail Preview Modal -->
+    <div id="thumbnailModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="thumbnailModalTitle">
+        <div class="modal" style="max-width: 640px; text-align: center;">
+            <div class="modal-header">
+                <h3 id="thumbnailModalTitle">Thumbnail Preview</h3>
+                <button class="modal-close" id="thumbnailModalClose" aria-label="Close">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <img id="thumbnailModalImage" class="thumbnail-modal-image" src="" alt="Song thumbnail" />
+            <div class="thumbnail-modal-actions">
+                <a id="thumbnailModalDownload" class="btn-secondary" download>
+                    <svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-6 2h12v2H6z"/></svg>
+                    Download Thumbnail
+                </a>
+            </div>
+        </div>
+    </div>
+
     <script>
         const form = document.getElementById('generateForm');
         const status = document.getElementById('status');
@@ -788,6 +831,7 @@
 
                 songList.innerHTML = songs.map(song => {
                     const hasMp4 = song.mp4_filename != null;
+                    const hasThumbnail = song.has_thumbnail === true;
                     const audioDownload = `<a href="download/${song.filename}" class="btn-secondary" download="${song.filename}">
                                     <svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-6 2h12v2H6z"/></svg>
                                     Download Audio
@@ -798,18 +842,40 @@
                         playerHtml = `<div class="song-player-card">
                             <video controls preload="none" src="download/${song.mp4_filename}?t=${song.created_at}"></video>
                         </div>`;
-                        videoActions = `<a href="download/${song.mp4_filename}" class="btn-secondary" download="${song.mp4_filename}">
+                        let thumbBtn = '';
+                        if (hasThumbnail) {
+                            thumbBtn = `<button class="btn-secondary" data-view-thumb="${song.filename}" title="View thumbnail">
+                                    <svg viewBox="0 0 24 24"><path d="M18 13v6H5v-6h13zM5 11a2 2 0 002 2h10a2 2 0 002-2V6a2 2 0 00-2-2H7a2 2 0 00-2 2v5zm0 0a9 9 0 1118 0 9 9 0 01-18 0z"/></svg>
+                                    View
+                                </button>`;
+                        }
+                        videoActions = `${thumbBtn}<a href="download/${song.mp4_filename}" class="btn-secondary" download="${song.mp4_filename}">
                                     <svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-6 2h12v2H6z"/></svg>
                                     Download Video
                                 </a>`;
                     } else {
+                        const safeName = song.filename.replace('.mp3', '');
+                        const thumbFilename = safeName + '.png';
                         playerHtml = `<div class="song-player-card">
                             <audio controls preload="none" src="download/${song.filename}?t=${song.created_at}"></audio>
                         </div>`;
-                        videoActions = `<button class="btn-accent" data-convert="${song.filename}" title="Convert to video">
+                        let thumbBtn = '';
+                        if (hasThumbnail) {
+                            thumbBtn = `<button class="btn-secondary" data-view-thumb="${song.filename}" title="View thumbnail">
+                                    <svg viewBox="0 0 24 24"><path d="M18 13v6H5v-6h13zM5 11a2 2 0 002 2h10a2 2 0 002-2V6a2 2 0 00-2-2H7a2 2 0 00-2 2v5zm0 0a9 9 0 1118 0 9 9 0 01-18 0z"/></svg>
+                                    View
+                                </button>`;
+                        } else {
+                            thumbBtn = `<button class="btn-secondary" data-thumbnail="${song.filename}" title="Generate thumbnail">
+                                    <svg viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+                                    Thumbnail
+                                </button>`;
+                        }
+                        const convertBtn = `<button class="btn-accent" data-convert="${song.filename}" title="Convert to video" ${!hasThumbnail ? 'disabled title="Generate thumbnail first"' : ''}>
                                     <svg viewBox="0 0 24 24"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
                                     Convert
                                 </button>`;
+                        videoActions = `${thumbBtn}${convertBtn}`;
                     }
                     return `
                     <div class="song-item">
@@ -834,6 +900,20 @@
                 songList.querySelectorAll('[data-convert]').forEach(button => {
                     button.addEventListener('click', function() {
                         convertToVideo(this.dataset.convert, this);
+                    });
+                });
+
+                // Attach event listeners to thumbnail buttons
+                songList.querySelectorAll('[data-thumbnail]').forEach(button => {
+                    button.addEventListener('click', function() {
+                        generateThumbnail(this.dataset.thumbnail, this);
+                    });
+                });
+
+                // Attach event listeners to view thumbnail buttons
+                songList.querySelectorAll('[data-view-thumb]').forEach(button => {
+                    button.addEventListener('click', function() {
+                        viewThumbnail(this.dataset.viewThumb);
                     });
                 });
 
@@ -904,14 +984,21 @@
                                     <svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-6 2h12v2H6z"/></svg>
                                     Download
                                 </a>
-                                <button class="btn-accent" data-convert="${result.filename}" title="Convert to video">
+                                <button class="btn-secondary" data-thumbnail="${result.filename}" title="Generate thumbnail">
+                                    <svg viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+                                    Thumbnail
+                                </button>
+                                <button class="btn-accent" data-convert="${result.filename}" title="Convert to video" disabled title="Generate thumbnail first">
                                     <svg viewBox="0 0 24 24"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
                                     Convert
                                 </button>
                             </div>
                         </div>
                     `);
-                    // Attach convert button listener in success area
+                    // Attach button listeners in success area
+                    status.querySelector('[data-thumbnail]').addEventListener('click', function() {
+                        generateThumbnail(this.dataset.thumbnail, this);
+                    });
                     status.querySelector('[data-convert]').addEventListener('click', function() {
                         convertToVideo(this.dataset.convert, this);
                     });
@@ -1021,6 +1108,86 @@
                 showStatus('error', 'Network error: ' + err.message);
             }
         }
+
+        async function generateThumbnail(filename, button) {
+            const originalText = button.innerHTML;
+            button.disabled = true;
+            button.innerHTML = '<span class="spinner"></span> Generating...';
+
+            try {
+                const response = await fetch('thumbnail/' + encodeURIComponent(filename), {
+                    method: 'POST',
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showStatus('success', 'Thumbnail generated successfully.');
+                    // Update the button in the success panel if it exists
+                    const thumbBtn = status.querySelector('[data-thumbnail]');
+                    const convertBtn = status.querySelector('[data-convert]');
+                    if (thumbBtn) {
+                        const filename = thumbBtn.dataset.thumbnail;
+                        thumbBtn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M18 13v6H5v-6h13zM5 11a2 2 0 002 2h10a2 2 0 002-2V6a2 2 0 00-2-2H7a2 2 0 00-2 2v5zm0 0a9 9 0 1118 0 9 9 0 01-18 0z"/></svg>
+                                    View`;
+                        thumbBtn.removeAttribute('data-thumbnail');
+                        thumbBtn.setAttribute('data-view-thumb', filename);
+                        thumbBtn.title = 'View thumbnail';
+                        thumbBtn.onclick = function() { viewThumbnail(filename); };
+                        if (convertBtn) {
+                            convertBtn.disabled = false;
+                            convertBtn.removeAttribute('title');
+                        }
+                    }
+                    // Refresh the song list to enable the Convert button
+                    loadSongs();
+                } else {
+                    button.innerHTML = originalText;
+                    button.disabled = false;
+                    showStatus('error', 'Thumbnail generation failed: ' + (result.error || 'Unknown error'));
+                }
+            } catch (err) {
+                button.innerHTML = originalText;
+                button.disabled = false;
+                showStatus('error', 'Network error: ' + err.message);
+            }
+        }
+
+        // ===== Thumbnail Preview =====
+        const thumbnailModal = document.getElementById('thumbnailModal');
+        const thumbnailModalClose = document.getElementById('thumbnailModalClose');
+        const thumbnailModalImage = document.getElementById('thumbnailModalImage');
+        const thumbnailModalDownload = document.getElementById('thumbnailModalDownload');
+
+        function viewThumbnail(filename) {
+            const safeName = filename.replace('.mp3', '');
+            const thumbFilename = safeName + '.png';
+            const url = 'download/' + encodeURIComponent(thumbFilename) + '?t=' + Date.now();
+            thumbnailModalImage.src = url;
+            thumbnailModalDownload.href = url;
+            thumbnailModalDownload.download = thumbFilename;
+            thumbnailModal.classList.add('active');
+            thumbnailModalClose.focus();
+        }
+
+        function closeThumbnailModal() {
+            thumbnailModal.classList.remove('active');
+            thumbnailModalImage.src = '';
+        }
+
+        thumbnailModalClose.addEventListener('click', closeThumbnailModal);
+
+        thumbnailModal.addEventListener('click', function(e) {
+            if (e.target === thumbnailModal) {
+                closeThumbnailModal();
+            }
+        });
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && thumbnailModal.classList.contains('active')) {
+                closeThumbnailModal();
+            }
+        });
 
         // ===== Lyrics Generation =====
         const generateLyricsBtn = document.getElementById('generateLyricsBtn');

@@ -11,7 +11,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use convert::{convert_mp3_to_mp4, generate_thumbnail, ConvertResponse};
+use convert::{convert_mp3_to_mp4, generate_thumbnail, ConvertErrorResponse, ConvertResponse};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use chrono::Utc;
@@ -96,6 +96,19 @@ struct ErrorResponse {
     error: String,
 }
 
+/// Response for thumbnail generation
+#[derive(Debug, Serialize)]
+struct ThumbnailResponse {
+    message: String,
+    thumbnail_filename: String,
+}
+
+/// Error response for thumbnail generation
+#[derive(Debug, Serialize)]
+struct ThumbnailErrorResponse {
+    error: String,
+}
+
 /// Request for lyrics generation
 #[derive(Debug, Deserialize)]
 struct LyricsGenerationRequest {
@@ -174,6 +187,7 @@ struct SongEntry {
     file_size_bytes: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     mp4_filename: Option<String>,
+    has_thumbnail: bool,
 }
 
 /// Response for fetching a single song's details
@@ -687,6 +701,8 @@ async fn download_file(
             // Determine content type based on file extension
             let content_type = if filename.ends_with(".mp4") {
                 "video/mp4"
+            } else if filename.ends_with(".png") {
+                "image/png"
             } else {
                 "audio/mpeg"
             };
@@ -745,6 +761,10 @@ async fn list_files(
                                 None
                             };
 
+                            // Check if a thumbnail exists for this song
+                            let thumbnail_path = output_dir.join(format!("{}.png", safe_name));
+                            let has_thumbnail = thumbnail_path.exists();
+
                             songs.push(SongEntry {
                                 filename: metadata.filename.clone(),
                                 song_name: metadata.song_name,
@@ -752,6 +772,7 @@ async fn list_files(
                                 created_at: metadata.created_at,
                                 file_size_bytes: file_size,
                                 mp4_filename: mp4_filename_field,
+                                has_thumbnail,
                             });
                         }
                     }
@@ -804,7 +825,38 @@ async fn get_song_details(
     }
 }
 
-async fn convert_to_video(
+/// Generates a thumbnail for a song, using AI if configured, otherwise procedural.
+/// The `safe_name` parameter is used for the filename (e.g., "quiet_storm"), while
+/// `song_name` is used for the AI prompt (e.g., "quiet storm").
+fn do_generate_thumbnail(
+    song_name: &str,
+    artist: &str,
+    prompt: &str,
+    safe_name: &str,
+    output_dir: &std::path::Path,
+) -> Result<PathBuf> {
+    if let Some(config) = image_gen::ImageGenConfig::from_env() {
+        let ai_prompt = image_gen::build_image_prompt(song_name, artist, prompt);
+        println!("🎨 Attempting AI thumbnail generation...");
+        println!("   Prompt: {}", ai_prompt);
+        
+        match image_gen::generate_image_from_prompt(&config, &ai_prompt, safe_name, output_dir) {
+            Ok(path) => {
+                println!("✅ AI thumbnail generated successfully");
+                return Ok(path);
+            }
+            Err(e) => {
+                println!("⚠️  AI thumbnail generation failed: {}", e);
+                println!("   Falling back to procedural thumbnail...");
+            }
+        }
+    }
+    
+    // Procedural fallback
+    generate_thumbnail(safe_name, artist, output_dir)
+}
+
+async fn generate_thumbnail_endpoint(
     state: axum::extract::State<Arc<AppState>>,
     Path(filename): Path<String>,
 ) -> Response {
@@ -814,12 +866,12 @@ async fn convert_to_video(
     let mp3_path = output_dir.join(&filename);
 
     if !mp3_path.exists() {
-        return (StatusCode::NOT_FOUND, Json(convert::ConvertErrorResponse {
+        return (StatusCode::NOT_FOUND, Json(ThumbnailErrorResponse {
             error: "MP3 file not found".to_string(),
         })).into_response();
     }
 
-    // Load song metadata to get song name, artist, and prompt
+    // Load song metadata
     let safe_name = filename.trim_end_matches(".mp3");
     let metadata_path = output_dir.join(format!("{}.json", safe_name));
     let (song_name, artist, prompt) = if let Ok(content) = fs::read_to_string(&metadata_path) {
@@ -832,71 +884,69 @@ async fn convert_to_video(
         (safe_name.to_string(), "Unknown".to_string(), String::new())
     };
 
-    // Always generate a fresh thumbnail (AI or procedural)
-    let thumbnail_path = if let Some(config) = image_gen::ImageGenConfig::from_env() {
-        // Try AI generation first with a timeout so it doesn't block forever
-        let ai_prompt = image_gen::build_image_prompt(&song_name, &artist, &prompt);
-        println!("🎨 Attempting AI thumbnail generation...");
-        println!("   Prompt: {}", ai_prompt);
-        
-        let output_dir_clone = output_dir.clone();
-        let ai_task = tokio::task::spawn_blocking(move || {
-            image_gen::generate_image_from_prompt(&config, &ai_prompt, &output_dir_clone)
-        });
-        
-        match tokio::time::timeout(std::time::Duration::from_secs(120), ai_task).await {
-            Ok(Ok(Ok(path))) => {
-                println!("✅ AI thumbnail generated successfully");
-                path
-            }
-            Ok(Ok(Err(e))) => {
-                println!("⚠️  AI thumbnail generation failed: {}", e);
-                println!("   Falling back to procedural thumbnail...");
-                match generate_thumbnail(&song_name, &artist, &output_dir) {
-                    Ok(path) => path,
-                    Err(e) => {
-                        return (StatusCode::INTERNAL_SERVER_ERROR, Json(convert::ConvertErrorResponse {
-                            error: format!("Failed to generate thumbnail: {}", e),
-                        })).into_response();
-                    }
-                }
-            }
-            Ok(Err(e)) => {
-                println!("⚠️  AI generation task failed: {}", e);
-                println!("   Falling back to procedural thumbnail...");
-                match generate_thumbnail(&song_name, &artist, &output_dir) {
-                    Ok(path) => path,
-                    Err(e) => {
-                        return (StatusCode::INTERNAL_SERVER_ERROR, Json(convert::ConvertErrorResponse {
-                            error: format!("Failed to generate thumbnail: {}", e),
-                        })).into_response();
-                    }
-                }
-            }
-            Err(e) => {
-                println!("⚠️  AI generation timed out: {}", e);
-                println!("   Falling back to procedural thumbnail...");
-                match generate_thumbnail(&song_name, &artist, &output_dir) {
-                    Ok(path) => path,
-                    Err(e) => {
-                        return (StatusCode::INTERNAL_SERVER_ERROR, Json(convert::ConvertErrorResponse {
-                            error: format!("Failed to generate thumbnail: {}", e),
-                        })).into_response();
-                    }
-                }
-            }
+    // Run thumbnail generation on a blocking task with timeout
+    let output_dir_clone = output_dir.clone();
+    let song_name_clone = song_name.clone();
+    let artist_clone = artist.clone();
+    let prompt_clone = prompt.clone();
+    let safe_name_clone = safe_name.to_string();
+    
+    let task = tokio::task::spawn_blocking(move || {
+        do_generate_thumbnail(&song_name_clone, &artist_clone, &prompt_clone, &safe_name_clone, &output_dir_clone)
+    });
+
+    match tokio::time::timeout(std::time::Duration::from_secs(120), task).await {
+        Ok(Ok(Ok(path))) => {
+            let thumbnail_filename = path.file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+            (StatusCode::OK, Json(ThumbnailResponse {
+                message: "Thumbnail generated successfully".to_string(),
+                thumbnail_filename,
+            })).into_response()
         }
-    } else {
-        // No AI config, use procedural
-        match generate_thumbnail(&song_name, &artist, &output_dir) {
-            Ok(path) => path,
-            Err(e) => {
-                return (StatusCode::INTERNAL_SERVER_ERROR, Json(convert::ConvertErrorResponse {
-                    error: format!("Failed to generate thumbnail: {}", e),
-                })).into_response();
-            }
+        Ok(Ok(Err(e))) => {
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(ThumbnailErrorResponse {
+                error: format!("Failed to generate thumbnail: {}", e),
+            })).into_response()
         }
-    };
+        Ok(Err(e)) => {
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(ThumbnailErrorResponse {
+                error: format!("Task failed: {}", e),
+            })).into_response()
+        }
+        Err(_) => {
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(ThumbnailErrorResponse {
+                error: "Thumbnail generation timed out (120s limit)".to_string(),
+            })).into_response()
+        }
+    }
+}
+
+async fn convert_to_video(
+    state: axum::extract::State<Arc<AppState>>,
+    Path(filename): Path<String>,
+) -> Response {
+    use axum::http::StatusCode;
+
+    let output_dir = PathBuf::from(&state.output_dir);
+    let mp3_path = output_dir.join(&filename);
+
+    if !mp3_path.exists() {
+        return (StatusCode::NOT_FOUND, Json(ConvertErrorResponse {
+            error: "MP3 file not found".to_string(),
+        })).into_response();
+    }
+
+    // Check if a thumbnail exists for this song
+    let safe_name = filename.trim_end_matches(".mp3");
+    let thumbnail_path = output_dir.join(format!("{}.png", safe_name));
+    
+    if !thumbnail_path.exists() {
+        return (StatusCode::BAD_REQUEST, Json(ConvertErrorResponse {
+            error: "No thumbnail found. Please generate a thumbnail first.".to_string(),
+        })).into_response();
+    }
 
     // Convert MP3 to MP4 using FFmpeg
     match convert_mp3_to_mp4(&mp3_path, &output_dir, &thumbnail_path) {
@@ -906,7 +956,7 @@ async fn convert_to_video(
                 mp4_filename,
             })).into_response()
         }
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(convert::ConvertErrorResponse {
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(ConvertErrorResponse {
             error: e.to_string(),
         })).into_response(),
     }
@@ -1138,6 +1188,7 @@ async fn main() -> Result<()> {
         .route("/list", get(list_files))
         .route("/song/{filename}", get(get_song_details))
         .route("/download/{filename}", get(download_file))
+        .route("/thumbnail/{filename}", post(generate_thumbnail_endpoint))
         .route("/convert/{filename}", post(convert_to_video))
         .nest_service("/static", ServeDir::new("static"))
         .layer(
