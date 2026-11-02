@@ -431,6 +431,18 @@
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+            cursor: pointer;
+            transition: color 0.15s ease;
+        }
+
+        .song-title:hover {
+            color: var(--color-primary);
+        }
+
+        .song-title:focus-visible {
+            outline: 2px solid var(--color-primary);
+            outline-offset: 2px;
+            border-radius: 2px;
         }
 
         .song-meta {
@@ -476,6 +488,110 @@
         .song-actions .btn-accent {
             flex: 1;
             justify-content: center;
+        }
+
+        /* ===== Modal ===== */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.4);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: var(--space-5);
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-lg);
+            padding: var(--space-5);
+            max-width: 600px;
+            width: 100%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: var(--shadow-md);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: var(--space-4);
+        }
+
+        .modal-header h3 {
+            font-size: var(--font-size-lg);
+            font-weight: var(--font-weight-semibold);
+            color: var(--color-text);
+            letter-spacing: -0.025em;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: var(--color-text-tertiary);
+            padding: var(--space-1);
+            border-radius: var(--radius-sm);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-close:hover {
+            background: var(--color-surface-secondary);
+            color: var(--color-text);
+        }
+
+        .modal-close:focus-visible {
+            outline: 2px solid var(--color-primary);
+            outline-offset: 2px;
+        }
+
+        .modal-field {
+            margin-bottom: var(--space-4);
+        }
+
+        .modal-field label {
+            display: block;
+            font-size: var(--font-size-sm);
+            font-weight: var(--font-weight-medium);
+            color: var(--color-text-secondary);
+            margin-bottom: var(--space-1);
+        }
+
+        .modal-field .modal-value {
+            font-size: var(--font-size-base);
+            color: var(--color-text);
+            background: var(--color-surface-secondary);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-sm);
+            padding: var(--space-3) var(--space-4);
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-family: var(--font-family);
+            line-height: 1.5;
+        }
+
+        .modal-field .modal-value.lyrics {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: var(--space-2);
+            margin-top: var(--space-5);
         }
 
         /* ===== Empty State ===== */
@@ -548,6 +664,22 @@
                 </div>
 
                 <div class="form-group">
+                    <label for="lyricsTopic">Topic / Theme (for AI lyrics generation)</label>
+                    <div style="display: flex; gap: var(--space-2); align-items: flex-start;">
+                        <div style="flex: 1;">
+                            <textarea id="lyricsTopic" rows="2" placeholder="e.g. a summer road trip with friends, a breakup in the rain"></textarea>
+                            <p class="hint">Describe what the song should be about, then click "Generate Lyrics" to create AI-powered lyrics.</p>
+                        </div>
+                        <div style="flex-shrink: 0; display: flex; flex-direction: column; gap: var(--space-2);">
+                            <button type="button" class="btn" id="generateLyricsBtn" style="white-space: nowrap; align-self: flex-start; margin-top: 28px;">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><path d="M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z"/></svg>
+                                Generate Lyrics
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
                     <label for="lyrics">Lyrics</label>
                     <textarea id="lyrics" name="lyrics" rows="12" placeholder="[verse]&#10;Write your lyrics here...&#10;&#10;[chorus]&#10;Your chorus here..." required></textarea>
                     <p class="hint">Use section tags like [verse], [chorus], [bridge], [outro].</p>
@@ -576,6 +708,41 @@
                 <div class="empty-state">No songs generated yet.</div>
             </div>
         </section>
+    </div>
+
+    <!-- Recall Modal -->
+    <div id="recallModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="recallModalTitle">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="recallModalTitle">Song Details</h3>
+                <button class="modal-close" id="recallModalClose" aria-label="Close">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-field">
+                <label>Song Name</label>
+                <div class="modal-value" id="recallSongName"></div>
+            </div>
+            <div class="modal-field">
+                <label>Artist</label>
+                <div class="modal-value" id="recallArtist"></div>
+            </div>
+            <div class="modal-field">
+                <label>Style Prompt</label>
+                <div class="modal-value" id="recallPrompt"></div>
+            </div>
+            <div class="modal-field">
+                <label>Lyrics</label>
+                <div class="modal-value lyrics" id="recallLyrics"></div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-secondary" id="recallModalCancel">Close</button>
+                <button class="btn" id="recallUseDetails">Use These Details</button>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -647,7 +814,7 @@
                     return `
                     <div class="song-item">
                         <div class="song-info">
-                            <div class="song-title">${song.song_name}</div>
+                            <div class="song-title" data-filename="${song.filename}" tabindex="0" title="Click to view details">${song.song_name}</div>
                             <div class="song-meta">
                                 ${song.artist} · ${formatFileSize(song.file_size_bytes)} · ${formatDate(song.created_at)}
                             </div>
@@ -667,6 +834,19 @@
                 songList.querySelectorAll('[data-convert]').forEach(button => {
                     button.addEventListener('click', function() {
                         convertToVideo(this.dataset.convert, this);
+                    });
+                });
+
+                // Attach event listeners to song titles for recall
+                songList.querySelectorAll('.song-title[data-filename]').forEach(title => {
+                    title.addEventListener('click', function() {
+                        fetchSongDetails(this.dataset.filename);
+                    });
+                    title.addEventListener('keydown', function(e) {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            fetchSongDetails(this.dataset.filename);
+                        }
                     });
                 });
             } catch (err) {
@@ -751,6 +931,70 @@
         // Load songs on page load
         loadSongs();
 
+        // Modal elements
+        const recallModal = document.getElementById('recallModal');
+        const recallModalClose = document.getElementById('recallModalClose');
+        const recallModalCancel = document.getElementById('recallModalCancel');
+        const recallUseDetails = document.getElementById('recallUseDetails');
+
+        async function fetchSongDetails(filename) {
+            try {
+                const response = await fetch('song/' + encodeURIComponent(filename));
+                if (!response.ok) {
+                    showStatus('error', 'Failed to load song details');
+                    return;
+                }
+                const song = await response.json();
+                openRecallModal(song);
+            } catch (err) {
+                showStatus('error', 'Network error: ' + err.message);
+            }
+        }
+
+        function openRecallModal(song) {
+            document.getElementById('recallSongName').textContent = song.song_name;
+            document.getElementById('recallArtist').textContent = song.artist;
+            document.getElementById('recallPrompt').textContent = song.prompt;
+            document.getElementById('recallLyrics').textContent = song.lyrics;
+            recallModal.classList.add('active');
+            recallModalClose.focus();
+        }
+
+        function closeRecallModal() {
+            recallModal.classList.remove('active');
+        }
+
+        recallModalClose.addEventListener('click', closeRecallModal);
+        recallModalCancel.addEventListener('click', closeRecallModal);
+
+        recallModal.addEventListener('click', function(e) {
+            if (e.target === recallModal) {
+                closeRecallModal();
+            }
+        });
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && recallModal.classList.contains('active')) {
+                closeRecallModal();
+            }
+        });
+
+        recallUseDetails.addEventListener('click', function() {
+            const songName = document.getElementById('recallSongName').textContent;
+            const artist = document.getElementById('recallArtist').textContent;
+            const prompt = document.getElementById('recallPrompt').textContent;
+            const lyrics = document.getElementById('recallLyrics').textContent;
+
+            document.getElementById('songName').value = songName;
+            document.getElementById('artist').value = artist;
+            document.getElementById('prompt').value = prompt;
+            document.getElementById('lyrics').value = lyrics;
+
+            closeRecallModal();
+            document.getElementById('songName').focus();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+
         async function convertToVideo(filename, button) {
             const originalText = button.innerHTML;
             button.disabled = true;
@@ -777,6 +1021,149 @@
                 showStatus('error', 'Network error: ' + err.message);
             }
         }
+
+        // ===== Lyrics Generation =====
+        const generateLyricsBtn = document.getElementById('generateLyricsBtn');
+        const lyricsTopic = document.getElementById('lyricsTopic');
+        const lyricsTextarea = document.getElementById('lyrics');
+        let lyricsGenerationAbort = null;
+
+        generateLyricsBtn.addEventListener('click', async () => {
+            const topic = lyricsTopic.value.trim();
+            if (!topic) {
+                showStatus('warning', 'Please enter a topic or theme for the lyrics.');
+                lyricsTopic.focus();
+                return;
+            }
+
+            // Cancel any in-progress generation
+            if (lyricsGenerationAbort) {
+                lyricsGenerationAbort.abort();
+                lyricsGenerationAbort = null;
+            }
+
+            const style = document.getElementById('prompt').value.trim() || 'pop, male vocal';
+            const controller = new AbortController();
+            lyricsGenerationAbort = controller;
+
+            // Show loading state
+            generateLyricsBtn.disabled = true;
+            generateLyricsBtn.innerHTML = '<span class="spinner"></span> Generating...';
+            lyricsTextarea.value = '';
+            showStatus('loading', '<span class="spinner"></span> Generating lyrics from AI...');
+
+            try {
+                const response = await fetch('generate-lyrics', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ topic, style }),
+                    signal: controller.signal,
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    showStatus('error', error.error || 'Lyrics generation failed');
+                    return;
+                }
+
+                // Read the SSE stream
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                let generationComplete = false;
+                let currentEvent = null;
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+
+                    // Parse SSE events from buffer
+                    const lines = buffer.split('\n');
+                    buffer = '';
+
+                    for (let i = 0; i < lines.length; i++) {
+                        const line = lines[i];
+
+                        // If this is the last line and we haven't seen a double newline, keep it in buffer
+                        if (i === lines.length - 1 && line !== '') {
+                            buffer = line;
+                            continue;
+                        }
+
+                        if (line.startsWith('event: ')) {
+                            currentEvent = line.slice(7).trim();
+                        } else if (line.startsWith('data: ')) {
+                            const data = line.slice(6);
+                            if (currentEvent === 'metadata') {
+                                // Parse and apply metadata to form fields
+                                try {
+                                    const meta = JSON.parse(data);
+                                    if (meta.duration) {
+                                        document.getElementById('duration').value = meta.duration;
+                                    }
+                                    if (meta.bpm) {
+                                        document.getElementById('bpm').value = meta.bpm;
+                                    }
+                                    if (meta.style) {
+                                        document.getElementById('prompt').value = meta.style;
+                                    }
+                                } catch (e) {
+                                    console.warn('Failed to parse metadata:', e);
+                                }
+                            } else if (currentEvent === 'error') {
+                                try {
+                                    const error = JSON.parse(data);
+                                    showStatus('error', error.error || 'Generation error');
+                                } catch {
+                                    showStatus('error', 'Generation error: ' + data);
+                                }
+                            } else if (currentEvent === 'done') {
+                                generationComplete = true;
+                                showStatus('success', 'Lyrics generated successfully! You can edit them before generating the song.');
+                            } else {
+                                // Default: append to lyrics textarea
+                                const text = data.replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\\\/g, '\\');
+                                lyricsTextarea.value += text;
+                                // Auto-scroll lyrics textarea
+                                lyricsTextarea.scrollTop = lyricsTextarea.scrollHeight;
+                            }
+                            // Reset event after processing data
+                            currentEvent = null;
+                        } else if (line === '') {
+                            // Empty line ends an SSE event, reset current event
+                            currentEvent = null;
+                        }
+                    }
+                }
+
+                // If we exited the loop without seeing a 'done' event, check buffer and show success if lyrics were generated
+                if (buffer && buffer.includes('event: done')) {
+                    generationComplete = true;
+                    showStatus('success', 'Lyrics generated successfully! You can edit them before generating the song.');
+                } else if (!generationComplete && lyricsTextarea.value.trim()) {
+                    // Stream ended but we have lyrics — treat as success
+                    showStatus('success', 'Lyrics generated successfully! You can edit them before generating the song.');
+                } else if (!generationComplete && !lyricsTextarea.value.trim()) {
+                    showStatus('warning', 'Generation ended unexpectedly. No lyrics were generated.');
+                }
+
+            } catch (err) {
+                if (err.name === 'AbortError') {
+                    showStatus('warning', 'Lyrics generation cancelled.');
+                } else {
+                    showStatus('error', 'Network error: ' + err.message);
+                }
+            } finally {
+                generateLyricsBtn.disabled = false;
+                generateLyricsBtn.innerHTML = `
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><path d="M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z"/></svg>
+                    Generate Lyrics
+                `;
+                lyricsGenerationAbort = null;
+            }
+        });
     </script>
 </body>
 </html>

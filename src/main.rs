@@ -1,4 +1,5 @@
 mod convert;
+mod lyrics_gen;
 
 use anyhow::Result;
 use axum::{
@@ -94,6 +95,74 @@ struct ErrorResponse {
     error: String,
 }
 
+/// Request for lyrics generation
+#[derive(Debug, Deserialize)]
+struct LyricsGenerationRequest {
+    topic: String,
+    #[serde(default)]
+    style: String,
+}
+
+/// Metadata extracted from the lyrics generation output
+struct LyricsMetadata {
+    duration: u32,
+    bpm: u32,
+    style: String,
+}
+
+/// Parse the lyrics generation output, extracting the metadata block and lyrics text.
+/// Returns (Option<LyricsMetadata>, String) where the string is the lyrics without the metadata block.
+fn parse_lyrics_output(full_text: &str) -> (Option<LyricsMetadata>, String) {
+    let start_marker = "[[METADATA]]";
+    let end_marker = "[[END_METADATA]]";
+
+    let start_pos = full_text.find(start_marker);
+    let end_pos = full_text.find(end_marker);
+
+    match (start_pos, end_pos) {
+        (Some(start), Some(end)) if end > start => {
+            let meta_block = &full_text[start + start_marker.len()..end];
+            let lyrics = full_text[end + end_marker.len()..].trim().to_string();
+
+            let mut duration: Option<u32> = None;
+            let mut bpm: Option<u32> = None;
+            let mut style: Option<String> = None;
+
+            for line in meta_block.lines() {
+                let line = line.trim();
+                if line.starts_with("DURATION:") {
+                    if let Some(val) = line.strip_prefix("DURATION:") {
+                        duration = val.trim().parse().ok();
+                    }
+                } else if line.starts_with("BPM:") {
+                    if let Some(val) = line.strip_prefix("BPM:") {
+                        bpm = val.trim().parse().ok();
+                    }
+                } else if line.starts_with("STYLE:") {
+                    if let Some(val) = line.strip_prefix("STYLE:") {
+                        style = Some(val.trim().to_string());
+                    }
+                }
+            }
+
+            let metadata = match (duration, bpm, style) {
+                (Some(d), Some(b), Some(s)) => Some(LyricsMetadata {
+                    duration: d,
+                    bpm: b,
+                    style: s,
+                }),
+                _ => None,
+            };
+
+            (metadata, lyrics)
+        }
+        _ => {
+            // No metadata block found, return the full text as lyrics
+            (None, full_text.trim().to_string())
+        }
+    }
+}
+
 /// Single song entry for the list endpoint
 #[derive(Debug, Serialize)]
 struct SongEntry {
@@ -104,6 +173,15 @@ struct SongEntry {
     file_size_bytes: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     mp4_filename: Option<String>,
+}
+
+/// Response for fetching a single song's details
+#[derive(Debug, Serialize)]
+struct SongDetails {
+    song_name: String,
+    artist: String,
+    prompt: String,
+    lyrics: String,
 }
 
 /// Metadata saved alongside the MP3
@@ -687,6 +765,44 @@ async fn list_files(
     (StatusCode::OK, Json(songs)).into_response()
 }
 
+/// Fetch full details (prompt, lyrics) for a single song from its JSON metadata
+async fn get_song_details(
+    state: axum::extract::State<Arc<AppState>>,
+    Path(filename): Path<String>,
+) -> Response {
+    use axum::http::StatusCode;
+
+    let output_dir = PathBuf::from(&state.output_dir);
+    let json_path = output_dir.join(filename).with_extension("json");
+
+    if !json_path.exists() {
+        return (StatusCode::NOT_FOUND, Json(ErrorResponse {
+            error: "Song metadata not found".to_string(),
+        })).into_response();
+    }
+
+    match fs::read_to_string(&json_path) {
+        Ok(content) => {
+            match serde_json::from_str::<SongMetadata>(&content) {
+                Ok(metadata) => {
+                    (StatusCode::OK, Json(SongDetails {
+                        song_name: metadata.song_name,
+                        artist: metadata.artist,
+                        prompt: metadata.prompt,
+                        lyrics: metadata.lyrics,
+                    })).into_response()
+                }
+                Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse {
+                    error: "Failed to parse metadata".to_string(),
+                })).into_response(),
+            }
+        }
+        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse {
+            error: "Failed to read metadata file".to_string(),
+        })).into_response(),
+    }
+}
+
 async fn convert_to_video(
     state: axum::extract::State<Arc<AppState>>,
     Path(filename): Path<String>,
@@ -715,26 +831,193 @@ async fn convert_to_video(
         (safe_name.to_string(), "Unknown".to_string())
     };
 
-    // Generate thumbnail from metadata
-    match generate_thumbnail(&song_name, &artist, &output_dir) {
-        Ok(thumbnail_path) => {
-            // Convert MP3 to MP4 using FFmpeg
-            match convert_mp3_to_mp4(&mp3_path, &output_dir, &thumbnail_path) {
-                Ok(mp4_filename) => {
-                    (StatusCode::OK, Json(ConvertResponse {
-                        message: "Video created successfully".to_string(),
-                        mp4_filename,
-                    })).into_response()
-                }
-                Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(convert::ConvertErrorResponse {
-                    error: e.to_string(),
-                })).into_response(),
+    // Use existing thumbnail if present, otherwise generate one
+    let thumbnail_path = output_dir.join("thumbnail.png");
+    let thumbnail_path = if thumbnail_path.exists() {
+        thumbnail_path
+    } else {
+        match generate_thumbnail(&song_name, &artist, &output_dir) {
+            Ok(path) => path,
+            Err(e) => {
+                return (StatusCode::INTERNAL_SERVER_ERROR, Json(convert::ConvertErrorResponse {
+                    error: format!("Failed to generate thumbnail: {}", e),
+                })).into_response();
             }
         }
+    };
+
+    // Convert MP3 to MP4 using FFmpeg
+    match convert_mp3_to_mp4(&mp3_path, &output_dir, &thumbnail_path) {
+        Ok(mp4_filename) => {
+            (StatusCode::OK, Json(ConvertResponse {
+                message: "Video created successfully".to_string(),
+                mp4_filename,
+            })).into_response()
+        }
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(convert::ConvertErrorResponse {
-            error: format!("Failed to generate thumbnail: {}", e),
+            error: e.to_string(),
         })).into_response(),
     }
+}
+
+/// SSE handler for lyrics generation endpoint
+async fn generate_lyrics(
+    Json(req): Json<LyricsGenerationRequest>,
+) -> Response {
+    use axum::http::StatusCode;
+    use foundation_models::StreamEvent;
+
+    // Validate the topic
+    if req.topic.trim().is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(ErrorResponse {
+            error: "Topic is required".to_string(),
+        })).into_response();
+    }
+
+    // Check model availability
+    if !lyrics_gen::is_available() {
+        let reason = lyrics_gen::availability_reason();
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(ErrorResponse {
+            error: format!("Foundation Models unavailable: {}", reason),
+        })).into_response();
+    }
+
+    // Create the lyrics generator
+    let style = if req.style.trim().is_empty() {
+        "pop, male vocal".to_string()
+    } else {
+        req.style.clone()
+    };
+
+    let generator = match lyrics_gen::LyricsGenerator::new(&req.topic, &style) {
+        Ok(g) => g,
+        Err(e) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse {
+                error: format!("Failed to create generation session: {}", e),
+            })).into_response();
+        }
+    };
+
+    // Log the request
+    println!("\n============================================================");
+    println!("📝 GENERATING LYRICS");
+    println!("============================================================");
+    println!("Topic: {}", req.topic);
+    println!("Style: {}", style);
+    println!("============================================================\n");
+
+    // Create an SSE stream channel
+    let (tx, rx) = tokio::sync::mpsc::channel::<String>(32);
+
+    // Spawn a task to run the blocking stream on a thread
+    tokio::task::spawn_blocking(move || {
+        use std::sync::mpsc;
+
+        // Collect all chunks using a channel so the closure can be 'static
+        let (chunk_tx, chunk_rx) = mpsc::channel::<String>();
+        let error_tx = chunk_tx.clone();
+
+        let result = generator.stream("Generate the lyrics now.", move |event| {
+            match event {
+                StreamEvent::Chunk(text) => {
+                    let _ = chunk_tx.send(text.to_string());
+                }
+                StreamEvent::Replace(text) => {
+                    let _ = chunk_tx.send(text.to_string());
+                }
+                StreamEvent::Error(e) => {
+                    let _ = error_tx.send(format!("__ERROR__{}", e));
+                }
+                _ => {}
+            }
+        });
+
+        // chunk_tx and error_tx were moved into the closure and dropped when stream() returned
+
+        // Collect all chunks
+        let mut full_text = String::new();
+        let mut error_msg: Option<String> = None;
+        for msg in chunk_rx.iter() {
+            if let Some(err) = msg.strip_prefix("__ERROR__") {
+                error_msg = Some(err.to_string());
+            } else {
+                full_text.push_str(&msg);
+            }
+        }
+
+        if let Err(e) = result {
+            error_msg.get_or_insert_with(|| e.to_string());
+        }
+
+        // Parse metadata and lyrics from the full text
+        let (metadata, lyrics_text) = parse_lyrics_output(&full_text);
+
+        // Send metadata event if we found any
+        if let Some(meta) = metadata {
+            let meta_json = serde_json::json!({
+                "duration": meta.duration,
+                "bpm": meta.bpm,
+                "style": meta.style
+            });
+            let escaped_json = meta_json.to_string()
+                .replace("\\", "\\\\")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r");
+            let meta_event = format!("event: metadata\ndata: {}\n\n", escaped_json);
+            if tx.blocking_send(meta_event).is_err() {
+                return;
+            }
+        }
+
+        // Stream the lyrics text in chunks for real-time display
+        let escaped_lyrics = lyrics_text.replace("\\", "\\\\").replace("\n", "\\n").replace("\r", "\\r");
+        // Split into smaller chunks for streaming effect
+        let chunk_size = 20; // characters per chunk
+        let chars: Vec<char> = escaped_lyrics.chars().collect();
+        for i in (0..chars.len()).step_by(chunk_size) {
+            let end = (i + chunk_size).min(chars.len());
+            let chunk: String = chars[i..end].iter().collect();
+            let msg = format!("data: {}\n\n", chunk);
+            if tx.blocking_send(msg).is_err() {
+                break;
+            }
+            // Small delay to simulate streaming
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        // Send error if there was one
+        if let Some(err) = error_msg {
+            let err_event = format!("event: error\ndata: {{\"error\": \"{}\"}}\n\n", err);
+            let _ = tx.blocking_send(err_event);
+        }
+
+        // Send done event
+        let done_event = "event: done\ndata: {}\n\n".to_string();
+        let _ = tx.blocking_send(done_event);
+
+        // Drop the sender so the receiver stream ends
+        drop(tx);
+    });
+
+    // Build the SSE response body from the channel receiver
+    use tokio_stream::wrappers::ReceiverStream;
+    use tokio_stream::StreamExt;
+    let receiver_stream = ReceiverStream::new(rx);
+    let body = axum::body::Body::from_stream(receiver_stream.map(|msg| {
+        Ok::<_, std::convert::Infallible>(msg)
+    }));
+
+    (
+        StatusCode::OK,
+        [
+            ("Content-Type", "text/event-stream"),
+            ("Cache-Control", "no-cache"),
+            ("Connection", "keep-alive"),
+            ("X-Accel-Buffering", "no"),
+        ],
+        body,
+    )
+        .into_response()
 }
 
 #[tokio::main]
@@ -787,11 +1070,21 @@ async fn main() -> Result<()> {
     println!("🎵 Music Creator starting on http://localhost:{}", port);
     println!("📁 Output directory: {}", state.output_dir);
 
+    // Log Foundation Models availability
+    if lyrics_gen::is_available() {
+        println!("✅ Foundation Models is available for lyrics generation");
+    } else {
+        println!("⚠️  Foundation Models is NOT available: {}", lyrics_gen::availability_reason());
+        println!("   Lyrics generation will not work. Enable Apple Intelligence in System Settings.");
+    }
+
     // Build the router with all API routes
     let app = Router::new()
         .route("/", get(index))
         .route("/generate", post(generate))
+        .route("/generate-lyrics", post(generate_lyrics))
         .route("/list", get(list_files))
+        .route("/song/{filename}", get(get_song_details))
         .route("/download/{filename}", get(download_file))
         .route("/convert/{filename}", post(convert_to_video))
         .nest_service("/static", ServeDir::new("static"))
