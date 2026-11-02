@@ -28,7 +28,6 @@ use std::{
 };
 use tower_http::{
     cors::{Any, CorsLayer},
-    services::ServeDir,
 };
 
 /// Music Creator - Generate songs using ACEMusic AI
@@ -245,31 +244,21 @@ struct AppState {
     output_dir: String,
 }
 
-async fn index() -> impl axum::response::IntoResponse {
-    // Resolve static/index.html relative to the executable location, not CWD
-    let static_path = std::env::current_exe()
-        .ok()
-        .and_then(|exe| {
-            let mut path = exe.parent()?.to_path_buf();
-            // In debug/release builds, go up to project root
-            if path.components().any(|c| c.as_os_str() == "debug" || c.as_os_str() == "release") {
-                path = path.parent()?.parent()?.to_path_buf();
-            }
-            Some(path.join("static/index.html"))
-        })
-        .unwrap_or_else(|| PathBuf::from("static/index.html"));
+// Embed static files at compile time so deployment only needs the binary
+static INDEX_HTML: &str = include_str!("../static/index.html");
+static FAVICON_SVG: &[u8] = include_bytes!("../static/favicon.svg");
 
-    match fs::read_to_string(&static_path) {
-        Ok(content) => Html(content).into_response(),
-        Err(e) => {
-            eprintln!("Failed to load index.html from {}: {}", static_path.display(), e);
-            (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to load index",
-            )
-                .into_response()
-        }
-    }
+async fn index() -> impl axum::response::IntoResponse {
+    Html(INDEX_HTML.to_string()).into_response()
+}
+
+async fn favicon() -> impl axum::response::IntoResponse {
+    (
+        axum::http::StatusCode::OK,
+        [(axum::http::header::CONTENT_TYPE, "image/svg+xml")],
+        FAVICON_SVG,
+    )
+        .into_response()
 }
 
 async fn generate(
@@ -1206,7 +1195,7 @@ async fn main() -> Result<()> {
         .route("/download/{filename}", get(download_file))
         .route("/thumbnail/{filename}", post(generate_thumbnail_endpoint))
         .route("/convert/{filename}", post(convert_to_video))
-        .nest_service("/static", ServeDir::new("static"))
+        .route("/static/favicon.svg", get(favicon))
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)
