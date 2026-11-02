@@ -246,13 +246,29 @@ struct AppState {
 }
 
 async fn index() -> impl axum::response::IntoResponse {
-    match fs::read_to_string("static/index.html") {
+    // Resolve static/index.html relative to the executable location, not CWD
+    let static_path = std::env::current_exe()
+        .ok()
+        .and_then(|exe| {
+            let mut path = exe.parent()?.to_path_buf();
+            // In debug/release builds, go up to project root
+            if path.components().any(|c| c.as_os_str() == "debug" || c.as_os_str() == "release") {
+                path = path.parent()?.parent()?.to_path_buf();
+            }
+            Some(path.join("static/index.html"))
+        })
+        .unwrap_or_else(|| PathBuf::from("static/index.html"));
+
+    match fs::read_to_string(&static_path) {
         Ok(content) => Html(content).into_response(),
-        Err(_) => (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            "Failed to load index",
-        )
-            .into_response(),
+        Err(e) => {
+            eprintln!("Failed to load index.html from {}: {}", static_path.display(), e);
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to load index",
+            )
+                .into_response()
+        }
     }
 }
 
