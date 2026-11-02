@@ -44,6 +44,7 @@ impl ImageGenConfig {
 }
 
 /// Builds an image generation prompt from song metadata
+/// Focuses on illustration and text-based artwork for cleaner results with SD 1.5
 pub fn build_image_prompt(song_name: &str, artist: &str, prompt: &str) -> String {
     let mut parts = Vec::new();
 
@@ -52,15 +53,20 @@ pub fn build_image_prompt(song_name: &str, artist: &str, prompt: &str) -> String
     }
 
     if !song_name.trim().is_empty() {
-        parts.push(format!("album art for {}", song_name));
+        parts.push(format!("illustration for {}", song_name));
     }
 
     if !artist.trim().is_empty() && artist.trim().to_lowercase() != "unknown" {
         parts.push(format!("by {}", artist));
     }
 
-    parts.push("high quality album cover art".to_string());
-    parts.push("professional music artwork".to_string());
+    parts.push("digital illustration".to_string());
+    parts.push("vector art style".to_string());
+    parts.push("clean lines".to_string());
+    parts.push("bold colors".to_string());
+    parts.push("minimalist design".to_string());
+    parts.push("typography".to_string());
+    parts.push("text based artwork".to_string());
 
     parts.join(", ")
 }
