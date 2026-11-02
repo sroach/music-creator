@@ -834,7 +834,7 @@
                     const hasThumbnail = song.has_thumbnail === true;
                     const audioDownload = `<a href="download/${song.filename}" class="btn-secondary" download="${song.filename}">
                                     <svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-6 2h12v2H6z"/></svg>
-                                    Download Audio
+                                    MP3
                                 </a>`;
                     let playerHtml = '';
                     let videoActions = '';
@@ -851,7 +851,7 @@
                         }
                         videoActions = `${thumbBtn}<a href="download/${song.mp4_filename}" class="btn-secondary" download="${song.mp4_filename}">
                                     <svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-6 2h12v2H6z"/></svg>
-                                    Download Video
+                                    Video
                                 </a>`;
                     } else {
                         const safeName = song.filename.replace('.mp3', '');
