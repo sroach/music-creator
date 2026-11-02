@@ -832,42 +832,68 @@ async fn convert_to_video(
         (safe_name.to_string(), "Unknown".to_string(), String::new())
     };
 
-    // Use existing thumbnail if present, otherwise generate one (AI or procedural)
-    let thumbnail_path = output_dir.join("thumbnail.png");
-    let thumbnail_path = if thumbnail_path.exists() {
-        thumbnail_path
-    } else {
-        // Try AI generation first if configured
-        let ai_thumbnail = if let Some(config) = image_gen::ImageGenConfig::from_env() {
-            let ai_prompt = image_gen::build_image_prompt(&song_name, &artist, &prompt);
-            println!("🎨 Attempting AI thumbnail generation using candle...");
-            println!("   Prompt: {}", ai_prompt);
-            
-            match image_gen::generate_image_from_prompt(&config, &ai_prompt, &output_dir) {
-                Ok(path) => {
-                    println!("✅ AI thumbnail generated successfully");
-                    Some(path)
-                }
-                Err(e) => {
-                    println!("⚠️  AI thumbnail generation failed: {}", e);
-                    println!("   Falling back to procedural thumbnail...");
-                    None
+    // Always generate a fresh thumbnail (AI or procedural)
+    let thumbnail_path = if let Some(config) = image_gen::ImageGenConfig::from_env() {
+        // Try AI generation first with a timeout so it doesn't block forever
+        let ai_prompt = image_gen::build_image_prompt(&song_name, &artist, &prompt);
+        println!("🎨 Attempting AI thumbnail generation...");
+        println!("   Prompt: {}", ai_prompt);
+        
+        let output_dir_clone = output_dir.clone();
+        let ai_task = tokio::task::spawn_blocking(move || {
+            image_gen::generate_image_from_prompt(&config, &ai_prompt, &output_dir_clone)
+        });
+        
+        match tokio::time::timeout(std::time::Duration::from_secs(120), ai_task).await {
+            Ok(Ok(Ok(path))) => {
+                println!("✅ AI thumbnail generated successfully");
+                path
+            }
+            Ok(Ok(Err(e))) => {
+                println!("⚠️  AI thumbnail generation failed: {}", e);
+                println!("   Falling back to procedural thumbnail...");
+                match generate_thumbnail(&song_name, &artist, &output_dir) {
+                    Ok(path) => path,
+                    Err(e) => {
+                        return (StatusCode::INTERNAL_SERVER_ERROR, Json(convert::ConvertErrorResponse {
+                            error: format!("Failed to generate thumbnail: {}", e),
+                        })).into_response();
+                    }
                 }
             }
-        } else {
-            None
-        };
-        
-        // Use AI thumbnail or fall back to procedural
-        match ai_thumbnail {
-            Some(path) => path,
-            None => match generate_thumbnail(&song_name, &artist, &output_dir) {
-                Ok(path) => path,
-                Err(e) => {
-                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(convert::ConvertErrorResponse {
-                        error: format!("Failed to generate thumbnail: {}", e),
-                    })).into_response();
+            Ok(Err(e)) => {
+                println!("⚠️  AI generation task failed: {}", e);
+                println!("   Falling back to procedural thumbnail...");
+                match generate_thumbnail(&song_name, &artist, &output_dir) {
+                    Ok(path) => path,
+                    Err(e) => {
+                        return (StatusCode::INTERNAL_SERVER_ERROR, Json(convert::ConvertErrorResponse {
+                            error: format!("Failed to generate thumbnail: {}", e),
+                        })).into_response();
+                    }
                 }
+            }
+            Err(e) => {
+                println!("⚠️  AI generation timed out: {}", e);
+                println!("   Falling back to procedural thumbnail...");
+                match generate_thumbnail(&song_name, &artist, &output_dir) {
+                    Ok(path) => path,
+                    Err(e) => {
+                        return (StatusCode::INTERNAL_SERVER_ERROR, Json(convert::ConvertErrorResponse {
+                            error: format!("Failed to generate thumbnail: {}", e),
+                        })).into_response();
+                    }
+                }
+            }
+        }
+    } else {
+        // No AI config, use procedural
+        match generate_thumbnail(&song_name, &artist, &output_dir) {
+            Ok(path) => path,
+            Err(e) => {
+                return (StatusCode::INTERNAL_SERVER_ERROR, Json(convert::ConvertErrorResponse {
+                    error: format!("Failed to generate thumbnail: {}", e),
+                })).into_response();
             }
         }
     };
