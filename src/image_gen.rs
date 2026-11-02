@@ -86,7 +86,7 @@ pub fn generate_image_from_prompt(
 
     // Build preset with automatic model download from Hugging Face
     let (cfg, mut model_cfg) = PresetBuilder::default()
-        .preset(Preset::StableDiffusion1_5)
+        .preset(Preset::SDXLBase1_0)
         .prompt(prompt)
         .with_modifier(move |mut builder| {
             builder.0.steps(steps).seed(seed).output(thumb_path_clone);
