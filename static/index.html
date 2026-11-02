@@ -818,10 +818,71 @@
             status.innerHTML = '';
         }
 
+        function updateSongButtons(songs) {
+            // Lightweight refresh: only update thumbnail and convert button states
+            songs.forEach(song => {
+                const songItem = songList.querySelector(`.song-title[data-filename="${song.filename}"]`);
+                if (!songItem) return;
+                const actionsDiv = songItem.closest('.song-item').querySelector('.song-actions');
+                if (!actionsDiv) return;
+
+                const hasMp4 = song.mp4_filename != null;
+                const hasThumbnail = song.has_thumbnail === true;
+
+                // Update thumbnail button
+                const thumbBtn = actionsDiv.querySelector('[data-thumbnail], [data-view-thumb]');
+                if (thumbBtn) {
+                    if (hasThumbnail && !thumbBtn.hasAttribute('data-view-thumb')) {
+                        // Change from "Thumbnail" to "View"
+                        thumbBtn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M18 13v6H5v-6h13zM5 11a2 2 0 002 2h10a2 2 0 002-2V6a2 2 0 00-2-2H7a2 2 0 00-2 2v5zm0 0a9 9 0 1118 0 9 9 0 01-18 0z"/></svg>
+                                    View`;
+                        thumbBtn.removeAttribute('data-thumbnail');
+                        thumbBtn.setAttribute('data-view-thumb', song.filename);
+                        thumbBtn.title = 'View thumbnail';
+                        thumbBtn.onclick = function() { viewThumbnail(song.filename); };
+                    } else if (!hasThumbnail && thumbBtn.hasAttribute('data-view-thumb')) {
+                        // Change from "View" to "Thumbnail"
+                        thumbBtn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+                                    Thumbnail`;
+                        thumbBtn.removeAttribute('data-view-thumb');
+                        thumbBtn.setAttribute('data-thumbnail', song.filename);
+                        thumbBtn.title = 'Generate thumbnail';
+                        thumbBtn.onclick = function() { generateThumbnail(song.filename, thumbBtn); };
+                    }
+                }
+
+                // Enable/disable convert button
+                if (!hasMp4) {
+                    const convertBtn = actionsDiv.querySelector('[data-convert]');
+                    if (convertBtn) {
+                        if (hasThumbnail && convertBtn.disabled) {
+                            convertBtn.disabled = false;
+                            convertBtn.removeAttribute('title');
+                        } else if (!hasThumbnail && !convertBtn.disabled) {
+                            convertBtn.disabled = true;
+                            convertBtn.title = 'Generate thumbnail first';
+                        }
+                    }
+                }
+            });
+        }
+
         async function loadSongs() {
             try {
                 const response = await fetch('list');
                 const songs = await response.json();
+
+                // Check if we can do a lightweight refresh (only update button states)
+                if (existingSongs.length > 0 && existingSongs.length === songs.length) {
+                    const allSameOrder = existingSongs.every((s, i) => s.filename === songs[i].filename);
+                    if (allSameOrder) {
+                        // Lightweight refresh: only update thumbnail/convert button states
+                        updateSongButtons(songs);
+                        existingSongs = songs;
+                        return;
+                    }
+                }
+
                 existingSongs = songs;
 
                 if (songs.length === 0) {
@@ -1017,6 +1078,19 @@
 
         // Load songs on page load
         loadSongs();
+
+        // Auto-refresh song list every 10 seconds to pick up thumbnail status changes
+        let refreshInterval = setInterval(loadSongs, 10000);
+
+        // Stop refreshing when the page is hidden to save resources
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                clearInterval(refreshInterval);
+            } else {
+                loadSongs();
+                refreshInterval = setInterval(loadSongs, 10000);
+            }
+        });
 
         // Modal elements
         const recallModal = document.getElementById('recallModal');
