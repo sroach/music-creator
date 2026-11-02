@@ -1,4 +1,5 @@
 mod convert;
+mod image_gen;
 mod lyrics_gen;
 
 use anyhow::Result;
@@ -818,30 +819,55 @@ async fn convert_to_video(
         })).into_response();
     }
 
-    // Load song metadata to get song name and artist
+    // Load song metadata to get song name, artist, and prompt
     let safe_name = filename.trim_end_matches(".mp3");
     let metadata_path = output_dir.join(format!("{}.json", safe_name));
-    let (song_name, artist) = if let Ok(content) = fs::read_to_string(&metadata_path) {
+    let (song_name, artist, prompt) = if let Ok(content) = fs::read_to_string(&metadata_path) {
         if let Ok(metadata) = serde_json::from_str::<SongMetadata>(&content) {
-            (metadata.song_name, metadata.artist)
+            (metadata.song_name, metadata.artist, metadata.prompt)
         } else {
-            (safe_name.to_string(), "Unknown".to_string())
+            (safe_name.to_string(), "Unknown".to_string(), String::new())
         }
     } else {
-        (safe_name.to_string(), "Unknown".to_string())
+        (safe_name.to_string(), "Unknown".to_string(), String::new())
     };
 
-    // Use existing thumbnail if present, otherwise generate one
+    // Use existing thumbnail if present, otherwise generate one (AI or procedural)
     let thumbnail_path = output_dir.join("thumbnail.png");
     let thumbnail_path = if thumbnail_path.exists() {
         thumbnail_path
     } else {
-        match generate_thumbnail(&song_name, &artist, &output_dir) {
-            Ok(path) => path,
-            Err(e) => {
-                return (StatusCode::INTERNAL_SERVER_ERROR, Json(convert::ConvertErrorResponse {
-                    error: format!("Failed to generate thumbnail: {}", e),
-                })).into_response();
+        // Try AI generation first if configured
+        let ai_thumbnail = if let Some(config) = image_gen::ImageGenConfig::from_env() {
+            let ai_prompt = image_gen::build_image_prompt(&song_name, &artist, &prompt);
+            println!("🎨 Attempting AI thumbnail generation using candle...");
+            println!("   Prompt: {}", ai_prompt);
+            
+            match image_gen::generate_image_from_prompt(&config, &ai_prompt, &output_dir) {
+                Ok(path) => {
+                    println!("✅ AI thumbnail generated successfully");
+                    Some(path)
+                }
+                Err(e) => {
+                    println!("⚠️  AI thumbnail generation failed: {}", e);
+                    println!("   Falling back to procedural thumbnail...");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        
+        // Use AI thumbnail or fall back to procedural
+        match ai_thumbnail {
+            Some(path) => path,
+            None => match generate_thumbnail(&song_name, &artist, &output_dir) {
+                Ok(path) => path,
+                Err(e) => {
+                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(convert::ConvertErrorResponse {
+                        error: format!("Failed to generate thumbnail: {}", e),
+                    })).into_response();
+                }
             }
         }
     };

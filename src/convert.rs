@@ -4,8 +4,6 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-
-/// Response after successful conversion.
 #[derive(Debug, Serialize)]
 pub struct ConvertResponse {
     pub message: String,
@@ -20,6 +18,8 @@ pub struct ConvertErrorResponse {
 
 /// Generates a thumbnail image from song metadata and saves it as PNG.
 /// Returns the path to the generated thumbnail.
+///
+/// This is the synchronous fallback — uses procedural generation only.
 pub fn generate_thumbnail(
     _song_name: &str,
     _artist: &str,
@@ -212,4 +212,5 @@ pub fn convert_mp3_to_mp4(
     println!("🎬 Converted {} to {}", mp3_path.display(), mp4_path.display());
     Ok(mp4_filename)
 }
+
 
