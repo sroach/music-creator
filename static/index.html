@@ -1190,40 +1190,100 @@
         async function generateThumbnail(filename, button) {
             const originalText = button.innerHTML;
             button.disabled = true;
-            button.innerHTML = '<span class="spinner"></span> Generating...';
+            button.innerHTML = '<span class="spinner"></span> Starting...';
 
             try {
                 const response = await fetch('thumbnail/' + encodeURIComponent(filename), {
                     method: 'POST',
                 });
 
-                const result = await response.json();
-
-                if (response.ok) {
-                    showStatus('success', 'Thumbnail generated successfully.');
-                    // Update the button in the success panel if it exists
-                    const thumbBtn = status.querySelector('[data-thumbnail]');
-                    const convertBtn = status.querySelector('[data-convert]');
-                    if (thumbBtn) {
-                        const filename = thumbBtn.dataset.thumbnail;
-                        thumbBtn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M18 13v6H5v-6h13zM5 11a2 2 0 002 2h10a2 2 0 002-2V6a2 2 0 00-2-2H7a2 2 0 00-2 2v5zm0 0a9 9 0 1118 0 9 9 0 01-18 0z"/></svg>
-                                    View`;
-                        thumbBtn.removeAttribute('data-thumbnail');
-                        thumbBtn.setAttribute('data-view-thumb', filename);
-                        thumbBtn.title = 'View thumbnail';
-                        thumbBtn.onclick = function() { viewThumbnail(filename); };
-                        if (convertBtn) {
-                            convertBtn.disabled = false;
-                            convertBtn.removeAttribute('title');
-                        }
-                    }
-                    // Refresh the song list to enable the Convert button
-                    loadSongs();
-                } else {
+                if (!response.ok) {
+                    const error = await response.json();
                     button.innerHTML = originalText;
                     button.disabled = false;
-                    showStatus('error', 'Thumbnail generation failed: ' + (result.error || 'Unknown error'));
+                    showStatus('error', 'Thumbnail generation failed: ' + (error.error || 'Unknown error'));
+                    return;
                 }
+
+                // Read the SSE stream
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                let generationComplete = false;
+                let currentEvent = null;
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+
+                    // Parse SSE events from buffer
+                    const lines = buffer.split('\n');
+                    buffer = '';
+
+                    for (let i = 0; i < lines.length; i++) {
+                        const line = lines[i];
+
+                        // If this is the last line and we haven't seen a double newline, keep it in buffer
+                        if (i === lines.length - 1 && line !== '') {
+                            buffer = line;
+                            continue;
+                        }
+
+                        if (line.startsWith('event: ')) {
+                            currentEvent = line.slice(7).trim();
+                        } else if (line.startsWith('data: ')) {
+                            const data = line.slice(6);
+                            if (currentEvent === 'started') {
+                                button.innerHTML = '<span class="spinner"></span> Connecting...';
+                                showStatus('loading', '<span class="spinner"></span> Connecting to image service...');
+                            } else if (currentEvent === 'generating') {
+                                try {
+                                    const info = JSON.parse(data);
+                                    button.innerHTML = '<span class="spinner"></span> Generating...';
+                                    showStatus('loading', '<span class="spinner"></span> ' + (info.message || 'Generating image, this may take a few minutes...'));
+                                } catch {
+                                    button.innerHTML = '<span class="spinner"></span> Generating...';
+                                    showStatus('loading', '<span class="spinner"></span> Generating image...');
+                                }
+                            } else if (currentEvent === 'existing') {
+                                showStatus('success', 'Thumbnail already exists.');
+                                generationComplete = true;
+                            } else if (currentEvent === 'error') {
+                                try {
+                                    const error = JSON.parse(data);
+                                    button.innerHTML = originalText;
+                                    button.disabled = false;
+                                    showStatus('error', 'Thumbnail generation failed: ' + (error.error || 'Unknown error'));
+                                } catch {
+                                    button.innerHTML = originalText;
+                                    button.disabled = false;
+                                    showStatus('error', 'Thumbnail generation failed: ' + data);
+                                }
+                                generationComplete = true;
+                            } else if (currentEvent === 'done') {
+                                generationComplete = true;
+                                showStatus('success', 'Thumbnail generated successfully.');
+                                // Refresh the song list to update buttons
+                                loadSongs();
+                            }
+                            // Reset event after processing data
+                            currentEvent = null;
+                        } else if (line === '') {
+                            // Empty line ends an SSE event, reset current event
+                            currentEvent = null;
+                        }
+                    }
+                }
+
+                // If stream ended without done/error, check if we have content
+                if (!generationComplete) {
+                    button.innerHTML = originalText;
+                    button.disabled = false;
+                    showStatus('warning', 'Thumbnail generation ended unexpectedly.');
+                }
+
             } catch (err) {
                 button.innerHTML = originalText;
                 button.disabled = false;

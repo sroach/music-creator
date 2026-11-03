@@ -95,13 +95,6 @@ struct ErrorResponse {
     error: String,
 }
 
-/// Response for thumbnail generation
-#[derive(Debug, Serialize)]
-struct ThumbnailResponse {
-    message: String,
-    thumbnail_filename: String,
-}
-
 /// Error response for thumbnail generation
 #[derive(Debug, Serialize)]
 struct ThumbnailErrorResponse {
@@ -831,21 +824,8 @@ async fn get_song_details(
     }
 }
 
-/// Generates a thumbnail for a song by calling the external Python text-to-image service.
-/// The `safe_name` parameter is used for the filename (e.g., "quiet_storm"), while
-/// `song_name` is used for the AI prompt (e.g., "quiet storm").
-async fn do_generate_thumbnail(
-    client: &thumbnail_client::ThumbnailClient,
-    song_name: &str,
-    artist: &str,
-    style: &str,
-    safe_name: &str,
-    output_dir: &std::path::Path,
-) -> Result<PathBuf> {
-    let prompt = thumbnail_client::build_prompt(song_name, artist, style);
-    client.generate(&prompt, safe_name, output_dir).await
-}
-
+/// SSE handler for thumbnail generation endpoint.
+/// Streams progress events while the Python text-to-image service generates the thumbnail.
 async fn generate_thumbnail_endpoint(
     state: axum::extract::State<Arc<AppState>>,
     Path(filename): Path<String>,
@@ -862,42 +842,106 @@ async fn generate_thumbnail_endpoint(
     }
 
     // Load song metadata
-    let safe_name = filename.trim_end_matches(".mp3");
+    let safe_name = filename.trim_end_matches(".mp3").to_string();
     let metadata_path = output_dir.join(format!("{}.json", safe_name));
     let (song_name, artist, style) = if let Ok(content) = fs::read_to_string(&metadata_path) {
         if let Ok(metadata) = serde_json::from_str::<SongMetadata>(&content) {
             (metadata.song_name, metadata.artist, metadata.prompt)
         } else {
-            (safe_name.to_string(), "Unknown".to_string(), String::new())
+            (safe_name.clone(), "Unknown".to_string(), String::new())
         }
     } else {
-        (safe_name.to_string(), "Unknown".to_string(), String::new())
+        (safe_name.clone(), "Unknown".to_string(), String::new())
     };
 
-    // Call the Python service directly (async, no spawn_blocking needed)
-    match do_generate_thumbnail(
-        &state.thumbnail_client,
-        &song_name,
-        &artist,
-        &style,
-        safe_name,
-        &output_dir,
-    ).await {
-        Ok(path) => {
-            let thumbnail_filename = path.file_name()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_default();
-            (StatusCode::OK, Json(ThumbnailResponse {
-                message: "Thumbnail generated successfully".to_string(),
-                thumbnail_filename,
-            })).into_response()
-        }
-        Err(e) => {
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(ThumbnailErrorResponse {
-                error: format!("Failed to generate thumbnail: {}", e),
-            })).into_response()
-        }
+    // Check if thumbnail already exists
+    let thumbnail_path = output_dir.join(format!("{}.png", safe_name));
+    if thumbnail_path.exists() {
+        let thumb_filename = format!("{}.png", safe_name);
+        let escaped_json = serde_json::json!({"thumbnail_filename": thumb_filename}).to_string();
+        let existing_event = format!("event: existing\ndata: {}\n\n", escaped_json);
+        let done_event = "event: done\ndata: {}\n\n".to_string();
+        return (
+            StatusCode::OK,
+            [
+                ("Content-Type", "text/event-stream"),
+                ("Cache-Control", "no-cache"),
+                ("Connection", "keep-alive"),
+                ("X-Accel-Buffering", "no"),
+            ],
+            axum::body::Body::from(existing_event + &done_event),
+        ).into_response();
     }
+
+    // Create an SSE stream channel
+    let (tx, rx) = tokio::sync::mpsc::channel::<String>(32);
+
+    let client = state.thumbnail_client.clone();
+    let output_dir_clone = output_dir.clone();
+    let safe_name_for_task = safe_name.clone();
+    let song_name_for_task = song_name.clone();
+    let artist_for_task = artist.clone();
+    let style_for_task = style.clone();
+
+    // Spawn a task to run the generation and stream progress
+    tokio::spawn(async move {
+        // Send started event
+        let started_event = "event: started\ndata: {\"message\": \"Connecting to image service...\"}\n\n".to_string();
+        if tx.send(started_event).await.is_err() {
+            return;
+        }
+
+        // Send generating event
+        let generating_event = "event: generating\ndata: {\"message\": \"Generating image, this may take a few minutes...\"}\n\n".to_string();
+        if tx.send(generating_event).await.is_err() {
+            return;
+        }
+
+        let prompt = thumbnail_client::build_prompt(&song_name_for_task, &artist_for_task, &style_for_task);
+        match client.generate(&prompt, &safe_name_for_task, &output_dir_clone).await {
+            Ok(path) => {
+                let thumbnail_filename = path.file_name()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                let done_json = serde_json::json!({"thumbnail_filename": thumbnail_filename});
+                let escaped_json = done_json.to_string()
+                    .replace("\\", "\\\\")
+                    .replace("\n", "\\n")
+                    .replace("\r", "\\r");
+                let done_event = format!("event: done\ndata: {}\n\n", escaped_json);
+                let _ = tx.send(done_event).await;
+            }
+            Err(e) => {
+                let error_json = serde_json::json!({"error": e.to_string()});
+                let escaped_json = error_json.to_string()
+                    .replace("\\", "\\\\")
+                    .replace("\n", "\\n")
+                    .replace("\r", "\\r");
+                let error_event = format!("event: error\ndata: {}\n\n", escaped_json);
+                let _ = tx.send(error_event).await;
+            }
+        }
+    });
+
+    // Build the SSE response body from the channel receiver
+    use tokio_stream::wrappers::ReceiverStream;
+    use tokio_stream::StreamExt;
+    let receiver_stream = ReceiverStream::new(rx);
+    let body = axum::body::Body::from_stream(receiver_stream.map(|msg| {
+        Ok::<_, std::convert::Infallible>(msg)
+    }));
+
+    (
+        StatusCode::OK,
+        [
+            ("Content-Type", "text/event-stream"),
+            ("Cache-Control", "no-cache"),
+            ("Connection", "keep-alive"),
+            ("X-Accel-Buffering", "no"),
+        ],
+        body,
+    )
+        .into_response()
 }
 
 async fn convert_to_video(
