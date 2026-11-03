@@ -1,6 +1,6 @@
 mod convert;
-mod image_gen;
 mod lyrics_gen;
+mod thumbnail_client;
 
 use anyhow::Result;
 use axum::{
@@ -11,7 +11,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use convert::{convert_mp3_to_mp4, generate_thumbnail, ConvertErrorResponse, ConvertResponse};
+use convert::{convert_mp3_to_mp4, ConvertErrorResponse, ConvertResponse};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use chrono::Utc;
@@ -242,6 +242,7 @@ struct AudioConfig {
 struct AppState {
     api_key: Option<String>,
     output_dir: String,
+    thumbnail_client: thumbnail_client::ThumbnailClient,
 }
 
 // Embed static files at compile time so deployment only needs the binary
@@ -830,35 +831,19 @@ async fn get_song_details(
     }
 }
 
-/// Generates a thumbnail for a song, using AI if configured, otherwise procedural.
+/// Generates a thumbnail for a song by calling the external Python text-to-image service.
 /// The `safe_name` parameter is used for the filename (e.g., "quiet_storm"), while
 /// `song_name` is used for the AI prompt (e.g., "quiet storm").
-fn do_generate_thumbnail(
+async fn do_generate_thumbnail(
+    client: &thumbnail_client::ThumbnailClient,
     song_name: &str,
     artist: &str,
-    prompt: &str,
+    style: &str,
     safe_name: &str,
     output_dir: &std::path::Path,
 ) -> Result<PathBuf> {
-    if let Some(config) = image_gen::ImageGenConfig::from_env() {
-        let ai_prompt = image_gen::build_image_prompt(song_name, artist, prompt);
-        println!("🎨 Attempting AI thumbnail generation...");
-        println!("   Prompt: {}", ai_prompt);
-        
-        match image_gen::generate_image_from_prompt(&config, &ai_prompt, safe_name, output_dir) {
-            Ok(path) => {
-                println!("✅ AI thumbnail generated successfully");
-                return Ok(path);
-            }
-            Err(e) => {
-                println!("⚠️  AI thumbnail generation failed: {}", e);
-                println!("   Falling back to procedural thumbnail...");
-            }
-        }
-    }
-    
-    // Procedural fallback
-    generate_thumbnail(safe_name, artist, output_dir)
+    let prompt = thumbnail_client::build_prompt(song_name, artist, style);
+    client.generate(&prompt, safe_name, output_dir).await
 }
 
 async fn generate_thumbnail_endpoint(
@@ -879,7 +864,7 @@ async fn generate_thumbnail_endpoint(
     // Load song metadata
     let safe_name = filename.trim_end_matches(".mp3");
     let metadata_path = output_dir.join(format!("{}.json", safe_name));
-    let (song_name, artist, prompt) = if let Ok(content) = fs::read_to_string(&metadata_path) {
+    let (song_name, artist, style) = if let Ok(content) = fs::read_to_string(&metadata_path) {
         if let Ok(metadata) = serde_json::from_str::<SongMetadata>(&content) {
             (metadata.song_name, metadata.artist, metadata.prompt)
         } else {
@@ -889,19 +874,16 @@ async fn generate_thumbnail_endpoint(
         (safe_name.to_string(), "Unknown".to_string(), String::new())
     };
 
-    // Run thumbnail generation on a blocking task with timeout
-    let output_dir_clone = output_dir.clone();
-    let song_name_clone = song_name.clone();
-    let artist_clone = artist.clone();
-    let prompt_clone = prompt.clone();
-    let safe_name_clone = safe_name.to_string();
-    
-    let task = tokio::task::spawn_blocking(move || {
-        do_generate_thumbnail(&song_name_clone, &artist_clone, &prompt_clone, &safe_name_clone, &output_dir_clone)
-    });
-
-    match tokio::time::timeout(std::time::Duration::from_secs(120), task).await {
-        Ok(Ok(Ok(path))) => {
+    // Call the Python service directly (async, no spawn_blocking needed)
+    match do_generate_thumbnail(
+        &state.thumbnail_client,
+        &song_name,
+        &artist,
+        &style,
+        safe_name,
+        &output_dir,
+    ).await {
+        Ok(path) => {
             let thumbnail_filename = path.file_name()
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_default();
@@ -910,19 +892,9 @@ async fn generate_thumbnail_endpoint(
                 thumbnail_filename,
             })).into_response()
         }
-        Ok(Ok(Err(e))) => {
+        Err(e) => {
             (StatusCode::INTERNAL_SERVER_ERROR, Json(ThumbnailErrorResponse {
                 error: format!("Failed to generate thumbnail: {}", e),
-            })).into_response()
-        }
-        Ok(Err(e)) => {
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(ThumbnailErrorResponse {
-                error: format!("Task failed: {}", e),
-            })).into_response()
-        }
-        Err(_) => {
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(ThumbnailErrorResponse {
-                error: "Thumbnail generation timed out (120s limit)".to_string(),
             })).into_response()
         }
     }
@@ -1169,6 +1141,7 @@ async fn main() -> Result<()> {
     let state = Arc::new(AppState {
         api_key,
         output_dir: output_dir_path.display().to_string(),
+        thumbnail_client: thumbnail_client::ThumbnailClient::new(),
     });
 
     // Initialize the m3u playlist on startup if output directory has songs
