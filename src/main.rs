@@ -883,42 +883,89 @@ async fn generate_thumbnail_endpoint(
     let artist_for_task = artist.clone();
     let style_for_task = style.clone();
 
-    // Spawn a task to run the generation and stream progress
+    // Spawn a task to run the generation and stream progress from the Python service
     tokio::spawn(async move {
-        // Send started event
-        let started_event = "event: started\ndata: {\"message\": \"Connecting to image service...\"}\n\n".to_string();
-        if tx.send(started_event).await.is_err() {
-            return;
-        }
-
-        // Send generating event
-        let generating_event = "event: generating\ndata: {\"message\": \"Generating image, this may take a few minutes...\"}\n\n".to_string();
-        if tx.send(generating_event).await.is_err() {
-            return;
-        }
-
         let prompt = thumbnail_client::build_prompt(&song_name_for_task, &artist_for_task, &style_for_task);
-        match client.generate(&prompt, &safe_name_for_task, &output_dir_clone).await {
-            Ok(path) => {
-                let thumbnail_filename = path.file_name()
-                    .map(|s| s.to_string_lossy().to_string())
-                    .unwrap_or_default();
-                let done_json = serde_json::json!({"thumbnail_filename": thumbnail_filename});
-                let escaped_json = done_json.to_string()
-                    .replace("\\", "\\\\")
-                    .replace("\n", "\\n")
-                    .replace("\r", "\\r");
-                let done_event = format!("event: done\ndata: {}\n\n", escaped_json);
-                let _ = tx.send(done_event).await;
+
+        // Create a channel for progress events from the client
+        let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel::<thumbnail_client::ThumbnailProgress>(32);
+
+        // Spawn the actual generation task
+        let gen_client = client.clone();
+        let gen_output_dir = output_dir_clone.clone();
+        let gen_safe_name = safe_name_for_task.clone();
+        let mut gen_task = tokio::spawn(async move {
+            gen_client.generate_and_stream(&prompt, &gen_safe_name, &gen_output_dir, &progress_tx).await
+        });
+
+        // Forward progress events from the Python service to the frontend SSE stream
+        let mut gen_result = None;
+        loop {
+            tokio::select! {
+                result = &mut gen_task => {
+                    gen_result = Some(result);
+                    break;
+                }
+                Some(progress) = progress_rx.recv() => {
+                    let sse_event = match &progress {
+                        thumbnail_client::ThumbnailProgress::Queued { message } => {
+                            let json = serde_json::json!({"message": message});
+                            let escaped = json.to_string().replace("\\", "\\\\").replace("\n", "\\n").replace("\r", "\\r");
+                            format!("event: started\ndata: {}\n\n", escaped)
+                        }
+                        thumbnail_client::ThumbnailProgress::Starting { message } => {
+                            let json = serde_json::json!({"message": message});
+                            let escaped = json.to_string().replace("\\", "\\\\").replace("\n", "\\n").replace("\r", "\\r");
+                            format!("event: generating\ndata: {}\n\n", escaped)
+                        }
+                        thumbnail_client::ThumbnailProgress::Generating { step, total_steps, percentage } => {
+                            let json = serde_json::json!({"step": step, "total_steps": total_steps, "percentage": percentage});
+                            let escaped = json.to_string().replace("\\", "\\\\").replace("\n", "\\n").replace("\r", "\\r");
+                            format!("event: progress\ndata: {}\n\n", escaped)
+                        }
+                        thumbnail_client::ThumbnailProgress::Completed { filename } => {
+                            let json = serde_json::json!({"thumbnail_filename": filename});
+                            let escaped = json.to_string().replace("\\", "\\\\").replace("\n", "\\n").replace("\r", "\\r");
+                            format!("event: done\ndata: {}\n\n", escaped)
+                        }
+                        thumbnail_client::ThumbnailProgress::Error { message } => {
+                            let json = serde_json::json!({"error": message});
+                            let escaped = json.to_string().replace("\\", "\\\\").replace("\n", "\\n").replace("\r", "\\r");
+                            format!("event: error\ndata: {}\n\n", escaped)
+                        }
+                    };
+                    if tx.send(sse_event).await.is_err() {
+                        break;
+                    }
+                }
+                else => break,
             }
-            Err(e) => {
-                let error_json = serde_json::json!({"error": e.to_string()});
-                let escaped_json = error_json.to_string()
-                    .replace("\\", "\\\\")
-                    .replace("\n", "\\n")
-                    .replace("\r", "\\r");
-                let error_event = format!("event: error\ndata: {}\n\n", escaped_json);
-                let _ = tx.send(error_event).await;
+        }
+
+        // If we exited the loop without a done/error event, handle the final result
+        if let Some(result) = gen_result {
+            match result {
+                Ok(Ok(_)) => {
+                    // Already sent done event via progress stream
+                }
+                Ok(Err(e)) => {
+                    let error_json = serde_json::json!({"error": e.to_string()});
+                    let escaped_json = error_json.to_string()
+                        .replace("\\", "\\\\")
+                        .replace("\n", "\\n")
+                        .replace("\r", "\\r");
+                    let error_event = format!("event: error\ndata: {}\n\n", escaped_json);
+                    let _ = tx.send(error_event).await;
+                }
+                Err(e) => {
+                    let error_json = serde_json::json!({"error": e.to_string()});
+                    let escaped_json = error_json.to_string()
+                        .replace("\\", "\\\\")
+                        .replace("\n", "\\n")
+                        .replace("\r", "\\r");
+                    let error_event = format!("event: error\ndata: {}\n\n", escaped_json);
+                    let _ = tx.send(error_event).await;
+                }
             }
         }
     });

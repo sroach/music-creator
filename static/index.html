@@ -1247,6 +1247,16 @@
                                     button.innerHTML = '<span class="spinner"></span> Generating...';
                                     showStatus('loading', '<span class="spinner"></span> Generating image...');
                                 }
+                            } else if (currentEvent === 'progress') {
+                                try {
+                                    const info = JSON.parse(data);
+                                    const pct = Math.round(info.percentage || 0);
+                                    button.innerHTML = `<span class="spinner"></span> ${pct}%`;
+                                    showStatus('loading', `<span class="spinner"></span> Generating image... ${info.step}/${info.total_steps} steps (${pct}%)`);
+                                } catch {
+                                    button.innerHTML = '<span class="spinner"></span> Generating...';
+                                    showStatus('loading', '<span class="spinner"></span> Generating image...');
+                                }
                             } else if (currentEvent === 'existing') {
                                 showStatus('success', 'Thumbnail already exists.');
                                 generationComplete = true;
