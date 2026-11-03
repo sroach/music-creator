@@ -101,6 +101,13 @@ struct ThumbnailErrorResponse {
     error: String,
 }
 
+/// Request for thumbnail generation with optional user prompt
+#[derive(Debug, Deserialize)]
+struct ThumbnailRequest {
+    #[serde(default)]
+    prompt: String,
+}
+
 /// Request for lyrics generation
 #[derive(Debug, Deserialize)]
 struct LyricsGenerationRequest {
@@ -826,9 +833,11 @@ async fn get_song_details(
 
 /// SSE handler for thumbnail generation endpoint.
 /// Streams progress events while the Python text-to-image service generates the thumbnail.
+/// Accepts an optional JSON body with a user-provided prompt.
 async fn generate_thumbnail_endpoint(
     state: axum::extract::State<Arc<AppState>>,
     Path(filename): Path<String>,
+    body: axum::extract::Json<Option<ThumbnailRequest>>,
 ) -> Response {
     use axum::http::StatusCode;
 
@@ -883,9 +892,15 @@ async fn generate_thumbnail_endpoint(
     let artist_for_task = artist.clone();
     let style_for_task = style.clone();
 
+    let user_prompt = body.0.and_then(|r| if r.prompt.is_empty() { None } else { Some(r.prompt) });
+
     // Spawn a task to run the generation and stream progress from the Python service
     tokio::spawn(async move {
-        let prompt = thumbnail_client::build_prompt(&song_name_for_task, &artist_for_task, &style_for_task);
+        let prompt = if let Some(user_prompt) = user_prompt {
+            user_prompt
+        } else {
+            thumbnail_client::build_prompt(&song_name_for_task, &artist_for_task, &style_for_task)
+        };
 
         // Create a channel for progress events from the client
         let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel::<thumbnail_client::ThumbnailProgress>(32);

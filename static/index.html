@@ -788,6 +788,29 @@
         </div>
     </div>
 
+    <!-- Thumbnail Prompt Modal -->
+    <div id="thumbnailPromptModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="thumbnailPromptModalTitle">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="thumbnailPromptModalTitle">Generate Thumbnail</h3>
+                <button class="modal-close" id="thumbnailPromptModalClose" aria-label="Close">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-field">
+                <label for="thumbnailPromptInput">Image Prompt</label>
+                <textarea id="thumbnailPromptInput" rows="4" placeholder="Describe the image you want to generate..."></textarea>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-secondary" id="thumbnailPromptModalCancel">Cancel</button>
+                <button class="btn" id="thumbnailPromptModalGenerate">Generate</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const form = document.getElementById('generateForm');
         const status = document.getElementById('status');
@@ -847,7 +870,7 @@
                         thumbBtn.removeAttribute('data-view-thumb');
                         thumbBtn.setAttribute('data-thumbnail', song.filename);
                         thumbBtn.title = 'Generate thumbnail';
-                        thumbBtn.onclick = function() { generateThumbnail(song.filename, thumbBtn); };
+                        thumbBtn.onclick = function() { generateThumbnail(song.filename, thumbBtn, song.song_name, song.artist); };
                     }
                 }
 
@@ -967,7 +990,12 @@
                 // Attach event listeners to thumbnail buttons
                 songList.querySelectorAll('[data-thumbnail]').forEach(button => {
                     button.addEventListener('click', function() {
-                        generateThumbnail(this.dataset.thumbnail, this);
+                        const songItem = this.closest('.song-item');
+                        const songNameEl = songItem.querySelector('.song-title');
+                        const songName = songNameEl ? songNameEl.textContent : '';
+                        const metaEl = songItem.querySelector('.song-meta');
+                        const artist = metaEl ? metaEl.textContent.split('·')[0].trim() : '';
+                        generateThumbnail(this.dataset.thumbnail, this, songName, artist);
                     });
                 });
 
@@ -1058,7 +1086,9 @@
                     `);
                     // Attach button listeners in success area
                     status.querySelector('[data-thumbnail]').addEventListener('click', function() {
-                        generateThumbnail(this.dataset.thumbnail, this);
+                        const songName = document.getElementById('songName').value.trim();
+                        const artist = document.getElementById('artist').value.trim() || 'AI Generated';
+                        generateThumbnail(this.dataset.thumbnail, this, songName, artist);
                     });
                     status.querySelector('[data-convert]').addEventListener('click', function() {
                         convertToVideo(this.dataset.convert, this);
@@ -1160,6 +1190,62 @@
             window.scrollTo({ top: 0, behavior: 'smooth' });
         });
 
+        // Thumbnail prompt modal elements
+        const thumbnailPromptModal = document.getElementById('thumbnailPromptModal');
+        const thumbnailPromptModalClose = document.getElementById('thumbnailPromptModalClose');
+        const thumbnailPromptModalCancel = document.getElementById('thumbnailPromptModalCancel');
+        const thumbnailPromptModalGenerate = document.getElementById('thumbnailPromptModalGenerate');
+        const thumbnailPromptInput = document.getElementById('thumbnailPromptInput');
+
+        let currentThumbnailFilename = null;
+        let currentThumbnailButton = null;
+
+        function openThumbnailPromptModal(filename, button, songName, artist) {
+            currentThumbnailFilename = filename;
+            currentThumbnailButton = button;
+            thumbnailPromptInput.value = '';
+            thumbnailPromptModal.classList.add('active');
+            thumbnailPromptInput.focus();
+        }
+
+        function closeThumbnailPromptModal() {
+            thumbnailPromptModal.classList.remove('active');
+            currentThumbnailFilename = null;
+            currentThumbnailButton = null;
+        }
+
+        thumbnailPromptModalClose.addEventListener('click', closeThumbnailPromptModal);
+        thumbnailPromptModalCancel.addEventListener('click', closeThumbnailPromptModal);
+
+        thumbnailPromptModal.addEventListener('click', function(e) {
+            if (e.target === thumbnailPromptModal) {
+                closeThumbnailPromptModal();
+            }
+        });
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && thumbnailPromptModal.classList.contains('active')) {
+                closeThumbnailPromptModal();
+            }
+        });
+
+        thumbnailPromptModalGenerate.addEventListener('click', function() {
+            const prompt = thumbnailPromptInput.value.trim();
+            if (!prompt) {
+                thumbnailPromptInput.focus();
+                return;
+            }
+            closeThumbnailPromptModal();
+            startThumbnailGeneration(currentThumbnailFilename, currentThumbnailButton, prompt);
+        });
+
+        thumbnailPromptInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                thumbnailPromptModalGenerate.click();
+            }
+        });
+
         async function convertToVideo(filename, button) {
             const originalText = button.innerHTML;
             button.disabled = true;
@@ -1187,7 +1273,22 @@
             }
         }
 
-        async function generateThumbnail(filename, button) {
+        async function generateThumbnail(filename, button, songName, artist) {
+            // Fetch song details to pre-fill the prompt modal
+            try {
+                const response = await fetch('song/' + encodeURIComponent(filename));
+                if (response.ok) {
+                    const song = await response.json();
+                    openThumbnailPromptModal(filename, button, song.song_name || songName, song.artist || artist);
+                } else {
+                    openThumbnailPromptModal(filename, button, songName, artist);
+                }
+            } catch {
+                openThumbnailPromptModal(filename, button, songName, artist);
+            }
+        }
+
+        async function startThumbnailGeneration(filename, button, prompt) {
             const originalText = button.innerHTML;
             button.disabled = true;
             button.innerHTML = '<span class="spinner"></span> Starting...';
@@ -1195,6 +1296,8 @@
             try {
                 const response = await fetch('thumbnail/' + encodeURIComponent(filename), {
                     method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt: prompt }),
                 });
 
                 if (!response.ok) {
