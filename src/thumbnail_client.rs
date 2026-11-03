@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone)]
 pub struct ThumbnailClient {
     base_url: String,
+    http_client: reqwest::Client,
 }
 
 impl ThumbnailClient {
@@ -13,7 +14,18 @@ impl ThumbnailClient {
     pub fn new() -> Self {
         let base_url = std::env::var("TEXT_TO_IMAGE_URL")
             .unwrap_or_else(|_| "http://localhost:7070".to_string());
-        Self { base_url }
+
+        // Text-to-image generation via SDXL can take 2-5 minutes, so we need
+        // very long timeouts. The default reqwest timeout is 30 seconds.
+        let http_client = reqwest::ClientBuilder::new()
+            .timeout(std::time::Duration::from_secs(600))
+            .build()
+            .expect("reqwest client should build");
+
+        Self {
+            base_url,
+            http_client,
+        }
     }
 
     /// Generates a thumbnail by calling the Python service.
@@ -37,11 +49,9 @@ impl ThumbnailClient {
             "filename": filename,
         });
 
-        let client = reqwest::Client::new();
-        let response = client
+        let response = self.http_client
             .post(&url)
             .json(&payload)
-            .timeout(std::time::Duration::from_secs(120))
             .send()
             .await?;
 
