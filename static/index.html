@@ -1274,6 +1274,7 @@
                                 generationComplete = true;
                             } else if (currentEvent === 'done') {
                                 generationComplete = true;
+                                button.disabled = false;
                                 showStatus('success', 'Thumbnail generated successfully.');
                                 // Refresh the song list to update buttons
                                 loadSongs();
