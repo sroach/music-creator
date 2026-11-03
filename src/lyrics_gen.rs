@@ -46,11 +46,6 @@ impl LyricsGenerator {
     {
         self.session.stream(prompt, callback)
     }
-
-    /// Gets a complete response (blocking, non-streaming).
-    pub fn respond(&self, prompt: &str) -> Result<String, FMError> {
-        self.session.respond(prompt)
-    }
 }
 
 /// Checks if the Foundation Models framework is available on this system.
