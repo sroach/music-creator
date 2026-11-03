@@ -1235,8 +1235,10 @@
                 thumbnailPromptInput.focus();
                 return;
             }
+            const filename = currentThumbnailFilename;
+            const button = currentThumbnailButton;
             closeThumbnailPromptModal();
-            startThumbnailGeneration(currentThumbnailFilename, currentThumbnailButton, prompt);
+            startThumbnailGeneration(filename, button, prompt);
         });
 
         thumbnailPromptInput.addEventListener('keydown', function(e) {
