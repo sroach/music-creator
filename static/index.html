@@ -1049,7 +1049,7 @@
             // Show loading state
             submitBtn.disabled = true;
             submitBtn.textContent = 'Generating...';
-            showStatus('loading', '<span class="spinner"></span> Generating your song...');
+            showStatus('loading', '<span class="spinner"></span> Starting generation...');
 
             try {
                 const response = await fetch('generate', {
@@ -1058,45 +1058,101 @@
                     body: JSON.stringify(payload)
                 });
 
-                const result = await response.json();
+                if (!response.ok) {
+                    const errorResult = await response.json().catch(() => ({ error: 'Generation failed' }));
+                    showStatus('error', errorResult.error || 'Generation failed');
+                    return;
+                }
 
-                if (response.ok) {
-                    const now = Date.now();
-                    showStatus('success', `
-                        Song generated successfully.<br>
-                        <div class="play-section">
-                            <div class="song-player-card">
-                                <audio controls autoplay preload="none" src="download/${result.filename}?t=${now}"></audio>
-                            </div>
-                            <div class="song-actions">
-                                <a href="download/${result.filename}" class="btn-secondary" download="${result.filename}">
-                                    <svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-6 2h12v2H6z"/></svg>
-                                    Download
-                                </a>
-                                <button class="btn-secondary" data-thumbnail="${result.filename}" title="Generate thumbnail">
-                                    <svg viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
-                                    Thumbnail
-                                </button>
-                                <button class="btn-accent" data-convert="${result.filename}" title="Convert to video" disabled title="Generate thumbnail first">
-                                    <svg viewBox="0 0 24 24"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
-                                    Convert
-                                </button>
-                            </div>
-                        </div>
-                    `);
-                    // Attach button listeners in success area
-                    status.querySelector('[data-thumbnail]').addEventListener('click', function() {
-                        const songName = document.getElementById('songName').value.trim();
-                        const artist = document.getElementById('artist').value.trim() || 'AI Generated';
-                        generateThumbnail(this.dataset.thumbnail, this, songName, artist);
-                    });
-                    status.querySelector('[data-convert]').addEventListener('click', function() {
-                        convertToVideo(this.dataset.convert, this);
-                    });
-                    // Refresh the song list
-                    loadSongs();
-                } else {
-                    showStatus('error', result.error || 'Generation failed');
+                // Read the SSE stream
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let generationComplete = false;
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+
+                    // Process complete SSE events
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+
+                    let currentEvent = 'message';
+                    let currentData = '';
+
+                    for (const line of lines) {
+                        if (line.startsWith('event: ')) {
+                            currentEvent = line.slice(7).trim();
+                        } else if (line.startsWith('data: ')) {
+                            currentData = line.slice(6);
+                        } else if (line.trim() === '' && currentData) {
+                            // Process the event
+                            try {
+                                const data = JSON.parse(currentData);
+
+                                if (currentEvent === 'started') {
+                                    submitBtn.innerHTML = '<span class="spinner"></span> Connecting...';
+                                    showStatus('loading', `<span class="spinner"></span> ${data.message || 'Connecting...'}`);
+                                } else if (currentEvent === 'generating') {
+                                    submitBtn.innerHTML = '<span class="spinner"></span> Generating...';
+                                    showStatus('loading', `<span class="spinner"></span> ${data.message || 'Generating audio...'}`);
+                                } else if (currentEvent === 'progress') {
+                                    const pct = data.percentage || 0;
+                                    const chunk = data.chunk || 0;
+                                    submitBtn.innerHTML = `<span class="spinner"></span> ${pct}%`;
+                                    showStatus('loading', `<span class="spinner"></span> Generating audio... chunk ${chunk} (${pct}%)`);
+                                } else if (currentEvent === 'done') {
+                                    generationComplete = true;
+                                    const now = Date.now();
+                                    showStatus('success', `
+                                        Song generated successfully.<br>
+                                        <div class="play-section">
+                                            <div class="song-player-card">
+                                                <audio controls autoplay preload="none" src="download/${data.filename}?t=${now}"></audio>
+                                            </div>
+                                            <div class="song-actions">
+                                                <a href="download/${data.filename}" class="btn-secondary" download="${data.filename}">
+                                                    <svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-6 2h12v2H6z"/></svg>
+                                                    Download
+                                                </a>
+                                                <button class="btn-secondary" data-thumbnail="${data.filename}" title="Generate thumbnail">
+                                                    <svg viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+                                                    Thumbnail
+                                                </button>
+                                                <button class="btn-accent" data-convert="${data.filename}" title="Convert to video" disabled title="Generate thumbnail first">
+                                                    <svg viewBox="0 0 24 24"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+                                                    Convert
+                                                </button>
+                                            </div>
+                                        </div>
+                                    `);
+                                    // Attach button listeners in success area
+                                    status.querySelector('[data-thumbnail]').addEventListener('click', function() {
+                                        const songName = document.getElementById('songName').value.trim();
+                                        const artist = document.getElementById('artist').value.trim() || 'AI Generated';
+                                        generateThumbnail(this.dataset.thumbnail, this, songName, artist);
+                                    });
+                                    status.querySelector('[data-convert]').addEventListener('click', function() {
+                                        convertToVideo(this.dataset.convert, this);
+                                    });
+                                    // Refresh the song list
+                                    loadSongs();
+                                } else if (currentEvent === 'error') {
+                                    showStatus('error', data.error || 'Generation failed');
+                                }
+                            } catch (e) {
+                                // Ignore JSON parse errors for partial data
+                            }
+                            currentData = '';
+                        }
+                    }
+                }
+
+                if (!generationComplete) {
+                    showStatus('error', 'Generation completed but no result received');
                 }
             } catch (err) {
                 showStatus('error', 'Network error: ' + err.message);

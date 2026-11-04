@@ -81,13 +81,6 @@ fn default_bpm() -> u32 {
     120
 }
 
-/// Response returned after successful generation
-#[derive(Debug, Serialize)]
-struct GenerateResponse {
-    message: String,
-    filename: String,
-    size: usize,
-}
 
 /// Error response
 #[derive(Debug, Serialize)]
@@ -262,6 +255,8 @@ async fn favicon() -> impl axum::response::IntoResponse {
         .into_response()
 }
 
+/// SSE handler for song generation endpoint.
+/// Streams progress events while the ACEMusic API generates the song.
 async fn generate(
     state: axum::extract::State<Arc<AppState>>,
     Json(req): Json<GenerateRequest>,
@@ -284,9 +279,23 @@ async fn generate(
     let api_key = match &state.api_key {
         Some(key) => key.clone(),
         None => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse {
-                error: "ACESTEP_API_KEY environment variable is not set".to_string(),
-            })).into_response();
+            let error_json = serde_json::json!({"error": "ACESTEP_API_KEY environment variable is not set"});
+            let escaped_json = error_json.to_string()
+                .replace("\\", "\\\\")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r");
+            let error_event = format!("event: error\ndata: {}\n\n", escaped_json);
+            let done_event = "event: done\ndata: {}\n\n".to_string();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                [
+                    ("Content-Type", "text/event-stream"),
+                    ("Cache-Control", "no-cache"),
+                    ("Connection", "keep-alive"),
+                    ("X-Accel-Buffering", "no"),
+                ],
+                axum::body::Body::from(error_event + &done_event),
+            ).into_response();
         }
     };
 
@@ -338,183 +347,301 @@ async fn generate(
             .expect("Content-Type should parse"),
     );
 
-    // Send the request
-    let client = reqwest::Client::new();
-    let url = format!("{}/v1/chat/completions", BASE_URL);
+    // Create an SSE stream channel
+    let (tx, rx) = tokio::sync::mpsc::channel::<String>(32);
 
-    let response = match client
-        .post(&url)
-        .headers(api_headers)
-        .json(&payload)
-        .timeout(Duration::from_secs(600))
-        .send()
-        .await
-    {
-        Ok(resp) => resp,
-        Err(e) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse {
-                error: format!("Request failed: {}", e),
-            })).into_response();
+    let output_dir = state.output_dir.clone();
+    let song_name = req.song_name.clone();
+    let artist = req.artist.clone();
+    let prompt = req.prompt.clone();
+    let lyrics = req.lyrics.clone();
+    let duration = req.duration;
+    let bpm = req.bpm;
+
+    // Spawn a task to run the generation and stream progress
+    tokio::spawn(async move {
+        // Send started event
+        let started_json = serde_json::json!({"message": "Connecting to ACEMusic API..."});
+        let escaped_json = started_json.to_string()
+            .replace("\\", "\\\\")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r");
+        let started_event = format!("event: started\ndata: {}\n\n", escaped_json);
+        if tx.send(started_event).await.is_err() {
+            return;
         }
-    };
 
-    let status = response.status();
-    let bytes = match response.bytes().await {
-        Ok(b) => b,
-        Err(e) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse {
-                error: format!("Failed to read response: {}", e),
-            })).into_response();
-        }
-    };
+        // Send the request to ACEMusic API with streaming
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(600))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+        let url = format!("{}/v1/chat/completions", BASE_URL);
 
-    if status.as_u16() != 200 {
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse {
-            error: format!("API error: {}", status.as_u16()),
-        })).into_response();
-    }
-
-    // Process SSE streaming response
-    let text = String::from_utf8_lossy(&bytes);
-    let audio_chunks = extract_audio_chunks(&text);
-
-    if audio_chunks.is_empty() {
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse {
-            error: "No audio data found in response".to_string(),
-        })).into_response();
-    }
-
-    // Combine and decode audio
-    let combined_audio = audio_chunks.join("");
-    let clean_audio = if combined_audio.contains(',') {
-        combined_audio
-            .splitn(2, ',')
-            .nth(1)
-            .unwrap_or(&combined_audio)
-            .to_string()
-    } else {
-        combined_audio
-    };
-
-    let audio_bytes = match BASE64.decode(&clean_audio) {
-        Ok(b) => b,
-        Err(e) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse {
-                error: format!("Failed to decode audio: {}", e),
-            })).into_response();
-        }
-    };
-
-    // Sanitize filename
-    let safe_name: String = req
-        .song_name
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '_' || c == '-' || c == ' ' {
-                c
-            } else {
-                '_'
+        let response = match client
+            .post(&url)
+            .headers(api_headers)
+            .json(&payload)
+            .send()
+            .await
+        {
+            Ok(resp) => resp,
+            Err(e) => {
+                let error_json = serde_json::json!({"error": format!("Request failed: {}", e)});
+                let escaped_json = error_json.to_string()
+                    .replace("\\", "\\\\")
+                    .replace("\n", "\\n")
+                    .replace("\r", "\\r");
+                let error_event = format!("event: error\ndata: {}\n\n", escaped_json);
+                let _ = tx.send(error_event).await;
+                return;
             }
-        })
-        .collect();
-    let safe_name = safe_name.trim().to_string();
-    let safe_name = if safe_name.is_empty() {
-        "generated_song".to_string()
-    } else {
-        safe_name.replace(' ', "_")
-    };
-    let filename = format!("{}.mp3", safe_name);
+        };
 
-    // Ensure output directory exists
-    fs::create_dir_all(&state.output_dir).unwrap_or_else(|_| ());
-
-    // Save the MP3 file
-    let filepath = PathBuf::from(&state.output_dir).join(&filename);
-    if let Err(e) = fs::write(&filepath, &audio_bytes) {
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse {
-            error: format!("Failed to save file: {}", e),
-        })).into_response();
-    }
-
-    // Embed ID3 tags
-    if let Err(e) = embed_id3_tags(
-        &filepath,
-        &req.song_name,
-        &req.artist,
-        &req.prompt,
-        &req.lyrics,
-    ) {
-        eprintln!("⚠️  Warning: Failed to embed ID3 tags: {}", e);
-    } else {
-        println!("🏷️  ID3 tags embedded in {}", filename);
-    }
-
-    // Save metadata JSON
-    let metadata = SongMetadata {
-        song_name: req.song_name,
-        artist: req.artist,
-        prompt: req.prompt,
-        lyrics: req.lyrics,
-        duration: req.duration,
-        bpm: req.bpm,
-        model: "acemusic/acestep-v15-turbo".to_string(),
-        filename: filename.clone(),
-        created_at: Utc::now().to_rfc3339(),
-        file_size_bytes: audio_bytes.len(),
-    };
-
-    let metadata_path = PathBuf::from(&state.output_dir).join(format!("{}.json", safe_name));
-    if let Err(e) = fs::write(
-        &metadata_path,
-        serde_json::to_string_pretty(&metadata).unwrap_or_default(),
-    ) {
-        eprintln!("⚠️  Warning: Failed to save metadata: {}", e);
-    }
-
-    // Sync the m3u playlist with the new song
-    sync_m3u_playlist(&PathBuf::from(&state.output_dir));
-
-    (StatusCode::OK, Json(GenerateResponse {
-        message: "Song generated successfully".to_string(),
-        filename,
-        size: audio_bytes.len(),
-    })).into_response()
-}
-
-/// Extract base64 audio chunks from SSE streaming response
-fn extract_audio_chunks(sse_text: &str) -> Vec<String> {
-    let mut chunks = Vec::new();
-
-    for line in sse_text.lines() {
-        // Skip comments
-        if line.starts_with(':') {
-            continue;
+        let status = response.status();
+        if status.as_u16() != 200 {
+            let error_json = serde_json::json!({"error": format!("API error: {}", status.as_u16())});
+            let escaped_json = error_json.to_string()
+                .replace("\\", "\\\\")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r");
+            let error_event = format!("event: error\ndata: {}\n\n", escaped_json);
+            let _ = tx.send(error_event).await;
+            return;
         }
 
-        // Parse SSE data lines
-        if let Some(data_str) = line.strip_prefix("data: ") {
-            // Check for stream end
-            if data_str.trim() == "[DONE]" {
-                break;
-            }
+        // Send generating event
+        let generating_json = serde_json::json!({"message": "Generating audio..."});
+        let escaped_json = generating_json.to_string()
+            .replace("\\", "\\\\")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r");
+        let generating_event = format!("event: generating\ndata: {}\n\n", escaped_json);
+        if tx.send(generating_event).await.is_err() {
+            return;
+        }
 
-            // Parse JSON chunk
-            let chunk: serde_json::Value = match serde_json::from_str(data_str) {
-                Ok(v) => v,
-                Err(_) => continue,
-            };
+        // Stream the response line-by-line and extract audio chunks
+        let mut audio_chunks = Vec::new();
+        let mut chunk_count = 0u32;
+        let mut buffer = String::new();
 
-            // Extract audio data from choices
-            if let Some(choices) = chunk.get("choices").and_then(|c| c.as_array()) {
-                for choice in choices {
-                    extract_audio_from_value(choice, &mut chunks);
+        let mut stream = response.bytes_stream();
+        while let Some(chunk_result) = tokio_stream::StreamExt::next(&mut stream).await {
+            match chunk_result {
+                Ok(bytes) => {
+                    let text = String::from_utf8_lossy(&bytes);
+                    buffer.push_str(&text);
+
+                    // Process complete lines
+                    while let Some(newline_pos) = buffer.find('\n') {
+                        let line = buffer.drain(..=newline_pos).collect::<String>();
+                        
+                        // Skip comments
+                        if line.trim_start().starts_with(':') {
+                            continue;
+                        }
+
+                        // Parse SSE data lines
+                        if let Some(data_str) = line.trim_end().strip_prefix("data: ") {
+                            // Check for stream end
+                            if data_str.trim() == "[DONE]" {
+                                break;
+                            }
+
+                            // Parse JSON chunk
+                            if let Ok(chunk) = serde_json::from_str::<serde_json::Value>(data_str) {
+                                // Extract audio data from choices
+                                if let Some(choices) = chunk.get("choices").and_then(|c| c.as_array()) {
+                                    let mut new_chunks = Vec::new();
+                                    for choice in choices {
+                                        extract_audio_from_value(choice, &mut new_chunks);
+                                    }
+                                    if !new_chunks.is_empty() {
+                                        chunk_count += 1;
+                                        audio_chunks.extend(new_chunks);
+                                        
+                                        // Estimate progress: each chunk is ~3-5 seconds of audio
+                                        // For a 180s song at ~4s per chunk, that's ~45 chunks
+                                        let estimated_total = (duration as f32 / 4.0).ceil() as u32;
+                                        let percentage = ((chunk_count as f32 / estimated_total as f32) * 100.0).min(95.0) as u32;
+                                        
+                                        let progress_json = serde_json::json!({
+                                            "chunk": chunk_count,
+                                            "percentage": percentage
+                                        });
+                                        let escaped_json = progress_json.to_string()
+                                            .replace("\\", "\\\\")
+                                            .replace("\n", "\\n")
+                                            .replace("\r", "\\r");
+                                        let progress_event = format!("event: progress\ndata: {}\n\n", escaped_json);
+                                        if tx.send(progress_event).await.is_err() {
+                                            return;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    let error_json = serde_json::json!({"error": format!("Failed to read response: {}", e)});
+                    let escaped_json = error_json.to_string()
+                        .replace("\\", "\\\\")
+                        .replace("\n", "\\n")
+                        .replace("\r", "\\r");
+                    let error_event = format!("event: error\ndata: {}\n\n", escaped_json);
+                    let _ = tx.send(error_event).await;
+                    return;
                 }
             }
         }
-    }
 
-    chunks
+        if audio_chunks.is_empty() {
+            let error_json = serde_json::json!({"error": "No audio data found in response"});
+            let escaped_json = error_json.to_string()
+                .replace("\\", "\\\\")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r");
+            let error_event = format!("event: error\ndata: {}\n\n", escaped_json);
+            let _ = tx.send(error_event).await;
+            return;
+        }
+
+        // Combine and decode audio
+        let combined_audio = audio_chunks.join("");
+        let clean_audio = if combined_audio.contains(',') {
+            combined_audio
+                .splitn(2, ',')
+                .nth(1)
+                .unwrap_or(&combined_audio)
+                .to_string()
+        } else {
+            combined_audio
+        };
+
+        let audio_bytes = match BASE64.decode(&clean_audio) {
+            Ok(b) => b,
+            Err(e) => {
+                let error_json = serde_json::json!({"error": format!("Failed to decode audio: {}", e)});
+                let escaped_json = error_json.to_string()
+                    .replace("\\", "\\\\")
+                    .replace("\n", "\\n")
+                    .replace("\r", "\\r");
+                let error_event = format!("event: error\ndata: {}\n\n", escaped_json);
+                let _ = tx.send(error_event).await;
+                return;
+            }
+        };
+
+        // Sanitize filename
+        let safe_name: String = song_name
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || c == '_' || c == '-' || c == ' ' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        let safe_name = safe_name.trim().to_string();
+        let safe_name = if safe_name.is_empty() {
+            "generated_song".to_string()
+        } else {
+            safe_name.replace(' ', "_")
+        };
+        let filename = format!("{}.mp3", safe_name);
+
+        // Ensure output directory exists
+        fs::create_dir_all(&output_dir).unwrap_or_else(|_| ());
+
+        // Save the MP3 file
+        let filepath = PathBuf::from(&output_dir).join(&filename);
+        if let Err(e) = fs::write(&filepath, &audio_bytes) {
+            let error_json = serde_json::json!({"error": format!("Failed to save file: {}", e)});
+            let escaped_json = error_json.to_string()
+                .replace("\\", "\\\\")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r");
+            let error_event = format!("event: error\ndata: {}\n\n", escaped_json);
+            let _ = tx.send(error_event).await;
+            return;
+        }
+
+        // Embed ID3 tags
+        if let Err(e) = embed_id3_tags(
+            &filepath,
+            &song_name,
+            &artist,
+            &prompt,
+            &lyrics,
+        ) {
+            eprintln!("⚠️  Warning: Failed to embed ID3 tags: {}", e);
+        } else {
+            println!("🏷️  ID3 tags embedded in {}", filename);
+        }
+
+        // Save metadata JSON
+        let metadata = SongMetadata {
+            song_name,
+            artist,
+            prompt,
+            lyrics,
+            duration,
+            bpm,
+            model: "acemusic/acestep-v15-turbo".to_string(),
+            filename: filename.clone(),
+            created_at: Utc::now().to_rfc3339(),
+            file_size_bytes: audio_bytes.len(),
+        };
+
+        let metadata_path = PathBuf::from(&output_dir).join(format!("{}.json", safe_name));
+        if let Err(e) = fs::write(
+            &metadata_path,
+            serde_json::to_string_pretty(&metadata).unwrap_or_default(),
+        ) {
+            eprintln!("⚠️  Warning: Failed to save metadata: {}", e);
+        }
+
+        // Sync the m3u playlist with the new song
+        sync_m3u_playlist(&PathBuf::from(&output_dir));
+
+        // Send done event
+        let done_json = serde_json::json!({
+            "message": "Song generated successfully",
+            "filename": filename,
+            "size": audio_bytes.len()
+        });
+        let escaped_json = done_json.to_string()
+            .replace("\\", "\\\\")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r");
+        let done_event = format!("event: done\ndata: {}\n\n", escaped_json);
+        let _ = tx.send(done_event).await;
+    });
+
+    // Build the SSE response body from the channel receiver
+    use tokio_stream::wrappers::ReceiverStream;
+    use tokio_stream::StreamExt;
+    let receiver_stream = ReceiverStream::new(rx);
+    let body = axum::body::Body::from_stream(receiver_stream.map(|msg| {
+        Ok::<_, std::convert::Infallible>(msg)
+    }));
+
+    (
+        StatusCode::OK,
+        [
+            ("Content-Type", "text/event-stream"),
+            ("Cache-Control", "no-cache"),
+            ("Connection", "keep-alive"),
+            ("X-Accel-Buffering", "no"),
+        ],
+        body,
+    )
+        .into_response()
 }
+
 
 /// Recursively extract audio data from a JSON value
 fn extract_audio_from_value(value: &serde_json::Value, chunks: &mut Vec<String>) {
