@@ -57,12 +57,12 @@ pub fn convert_mp3_to_mp4(
 
     // Build the filter complex based on whether a thumbnail exists
     // Frequency analyzer settings: bar mode for distinct vertical equalizer bars,
-    // 1200x180 size, gold-to-pink gradient (0xFFCC00|0xE60067), centered horizontally and 30px from the bottom edge.
-    // Semi-transparent dark box behind bars: 240px tall, full width, dark plum at 60% opacity,
-    // anchored to bottom - bars sit inside with 30px padding top/bottom.
+    // 1200x180 size, gold-to-pink gradient (0xFFCC00|0xE60067), centered horizontally and 10px from the bottom edge.
+    // Semi-transparent dark box behind bars: 200px tall, full width, dark plum at 60% opacity,
+    // anchored to bottom - bars sit inside with 10px padding top/bottom.
     let freq_opts = "s=1200x180:mode=bar:colors=0xFFCC00|0xE60067:rate=30:ascale=sqrt";
-    let box_opts = "y=ih-240:h=240:w=iw:color=0x1A0A16@0.6:t=fill";
-    let freq_overlay = "(W-w)/2:H-h-30";
+    let box_opts = "y=ih-200:h=200:w=iw:color=0x1A0A16@0.6:t=fill";
+    let freq_overlay = "(W-w)/2:H-h-10";
 
     let filter = if has_thumbnail {
         // Full-size thumbnail as background, drawbox behind bars, then frequency bars overlay
