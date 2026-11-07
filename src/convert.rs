@@ -114,7 +114,7 @@ pub fn convert_mp3_to_mp4(
             // Escape single quotes for FFmpeg drawtext (replace ' with '\'')
             let escaped = t.replace('\'', "'\\''");
             Some(format!(
-                ",drawtext=text='{}':fontcolor=white:fontsize=48:fontfile=/System/Library/Fonts/Supplemental/Arial\\ Bold.ttf:x=(W-w)/2:y=h*0.05:box=1:boxcolor=0x1A0A16@0.6:boxborderw=25",
+                ",drawtext=text='{}':fontcolor=white:fontsize=48:fontfile=/System/Library/Fonts/Supplemental/Arial\\ Bold.ttf:x=(W-w)/2:y=h*0.05:box=1:boxcolor=0x1A0A16@0.6:boxborderw=25:text_align=center",
                 escaped
             ))
         }).unwrap_or_default()
