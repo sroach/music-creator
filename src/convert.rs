@@ -19,10 +19,12 @@ pub struct ConvertErrorResponse {
 /// Converts an MP3 file to an MP4 video using FFmpeg.
 ///
 /// Uses the showfreqs filter to generate an animated frequency visualization (equalizer bars)
-/// from the MP3 audio, with an optional thumbnail overlay. Creates an H.264/AAC MP4 suitable for YouTube upload.
+/// from the MP3 audio, with an optional thumbnail overlay and optional song title text.
+/// Creates an H.264/AAC MP4 suitable for YouTube upload.
 pub fn convert_mp3_to_mp4(
     mp3_path: &Path,
     output_dir: &Path,
+    title: Option<&str>,
 ) -> Result<String> {
     // Derive output filename from input
     let mp4_filename = mp3_path
@@ -64,17 +66,28 @@ pub fn convert_mp3_to_mp4(
     let box_opts = "y=ih-200:h=200:w=iw:color=0x1A0A16@0.6:t=fill";
     let freq_overlay = "(W-w)/2:H-h-10";
 
+    // Song title text overlay: top center, white bold text with semi-transparent dark background box
+    // matching the equalizer box style for visual consistency.
+    let title_filter = title.and_then(|t| {
+        // Escape single quotes for FFmpeg drawtext (replace ' with '\'')
+        let escaped = t.replace('\'', "'\\''");
+        Some(format!(
+            ",drawtext=text='{}':fontcolor=white:fontsize=48:fontfile=/System/Library/Fonts/Supplemental/Arial\\ Bold.ttf:x=(W-w)/2:y=h*0.05:box=1:boxcolor=0x1A0A16@0.6:boxborderw=25",
+            escaped
+        ))
+    }).unwrap_or_default();
+
     let filter = if has_thumbnail {
-        // Full-size thumbnail as background, drawbox behind bars, then frequency bars overlay
+        // Full-size thumbnail as background, drawbox behind bars, then frequency bars overlay, optional title
         format!(
-            "[1:v]scale=1920:1080:force_original_aspect_ratio=decrease,setsar=1[thumb];[0:a]showfreqs={}[wave];[thumb]drawbox={}[bg_with_box];[bg_with_box][wave]overlay={}[outv]",
-            freq_opts, box_opts, freq_overlay
+            "[1:v]scale=1920:1080:force_original_aspect_ratio=decrease,setsar=1[thumb];[0:a]showfreqs={}[wave];[thumb]drawbox={}[bg_with_box];[bg_with_box][wave]overlay={}{}[outv]",
+            freq_opts, box_opts, freq_overlay, title_filter
         )
     } else {
-        // Dark background, drawbox behind bars, then frequency bars overlay
+        // Dark background, drawbox behind bars, then frequency bars overlay, optional title
         format!(
-            "color=s=1920x1080:r=30:c=0x000000[bg];[0:a]showfreqs={}[wave];[bg]drawbox={}[bg_with_box];[bg_with_box][wave]overlay={}[outv]",
-            freq_opts, box_opts, freq_overlay
+            "color=s=1920x1080:r=30:c=0x000000[bg];[0:a]showfreqs={}[wave];[bg]drawbox={}[bg_with_box];[bg_with_box][wave]overlay={}{}[outv]",
+            freq_opts, box_opts, freq_overlay, title_filter
         )
     };
 

@@ -955,7 +955,7 @@
                                     Thumbnail
                                 </button>`;
                         }
-                        const convertBtn = `<button class="btn-accent" data-convert="${song.filename}" title="Convert to video" ${!hasThumbnail ? 'disabled title="Generate thumbnail first"' : ''}>
+                        const convertBtn = `<button class="btn-accent" data-convert="${song.filename}" data-song-name="${(song.song_name || '').replace(/'/g, '&#39;')}" title="Convert to video" ${!hasThumbnail ? 'disabled title="Generate thumbnail first"' : ''}>
                                     <svg viewBox="0 0 24 24"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
                                     Convert
                                 </button>`;
@@ -983,7 +983,7 @@
                 // Attach event listeners to convert buttons
                 songList.querySelectorAll('[data-convert]').forEach(button => {
                     button.addEventListener('click', function() {
-                        convertToVideo(this.dataset.convert, this);
+                        convertToVideo(this.dataset.convert, this.dataset.songName, this);
                     });
                 });
 
@@ -1122,7 +1122,7 @@
                                                     <svg viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
                                                     Thumbnail
                                                 </button>
-                                                <button class="btn-accent" data-convert="${data.filename}" title="Convert to video" disabled title="Generate thumbnail first">
+                                                <button class="btn-accent" data-convert="${data.filename}" data-song-name="${(data.song_name || '').replace(/'/g, '&#39;')}" title="Convert to video" disabled title="Generate thumbnail first">
                                                     <svg viewBox="0 0 24 24"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
                                                     Convert
                                                 </button>
@@ -1136,7 +1136,7 @@
                                         generateThumbnail(this.dataset.thumbnail, this, songName, artist);
                                     });
                                     status.querySelector('[data-convert]').addEventListener('click', function() {
-                                        convertToVideo(this.dataset.convert, this);
+                                        convertToVideo(this.dataset.convert, this.dataset.songName, this);
                                     });
                                     // Refresh the song list
                                     loadSongs();
@@ -1304,7 +1304,7 @@
             }
         });
 
-        async function convertToVideo(filename, button) {
+        async function convertToVideo(filename, songName, button) {
             const originalText = button.innerHTML;
             button.disabled = true;
             button.innerHTML = '<span class="spinner"></span> Converting...';
@@ -1312,6 +1312,8 @@
             try {
                 const response = await fetch('convert/' + encodeURIComponent(filename), {
                     method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title: songName || null }),
                 });
 
                 const result = await response.json();

@@ -1133,9 +1133,18 @@ async fn generate_thumbnail_endpoint(
         .into_response()
 }
 
+/// Request body for video conversion.
+#[derive(Debug, serde::Deserialize)]
+struct ConvertRequest {
+    /// Optional song title to overlay on the video.
+    #[serde(default)]
+    title: Option<String>,
+}
+
 async fn convert_to_video(
     state: axum::extract::State<Arc<AppState>>,
     Path(filename): Path<String>,
+    Json(req): Json<ConvertRequest>,
 ) -> Response {
     use axum::http::StatusCode;
 
@@ -1148,8 +1157,9 @@ async fn convert_to_video(
         })).into_response();
     }
 
-    // Convert MP3 to MP4 using FFmpeg with waveform visualization
-    match convert_mp3_to_mp4(&mp3_path, &output_dir) {
+    // Convert MP3 to MP4 using FFmpeg with waveform visualization and optional title
+    let title = req.title.filter(|t| !t.trim().is_empty());
+    match convert_mp3_to_mp4(&mp3_path, &output_dir, title.as_deref()) {
         Ok(mp4_filename) => {
             (StatusCode::OK, Json(ConvertResponse {
                 message: "Video created successfully".to_string(),
