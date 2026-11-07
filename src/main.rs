@@ -799,22 +799,27 @@ fn build_mp4_playlist_content(output_dir: &PathBuf, base_url: &str) -> String {
 }
 
 /// Serve the MP4 M3U playlist for download/import.
-/// Generates the playlist on-the-fly using the request's Host header so the URLs
-/// point to the correct server address (e.g., https://roach.gy/music-creator/download/song.mp4).
+/// Prefers the `base_url` query parameter (from the browser's current context) so that
+/// host, protocol, and base path always match what the user sees. Falls back to server
+/// headers + config when the parameter is absent.
 async fn get_mp4_playlist(
     state: axum::extract::State<Arc<AppState>>,
     headers: HeaderMap,
+    axum::extract::Query(query): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Response {
     use axum::http::StatusCode;
 
-    // Determine the base URL from the request headers
-    let scheme = headers.get("X-Forwarded-Proto").and_then(|v| v.to_str().ok())
-        .unwrap_or("http");
-    let host = headers.get("X-Forwarded-Host").and_then(|v| v.to_str().ok())
-        .or_else(|| headers.get("Host").and_then(|v| v.to_str().ok()))
-        .unwrap_or("localhost:8001");
-    // Include the base path prefix (e.g., "/music-creator") for proxy deployments
-    let base_url = format!("{}://{}{}", scheme, host, state.base_path);
+    // Prefer the browser-provided base URL; fall back to server headers + config
+    let base_url = query.get("base_url")
+        .cloned()
+        .unwrap_or_else(|| {
+            let scheme = headers.get("X-Forwarded-Proto").and_then(|v| v.to_str().ok())
+                .unwrap_or("http");
+            let host = headers.get("X-Forwarded-Host").and_then(|v| v.to_str().ok())
+                .or_else(|| headers.get("Host").and_then(|v| v.to_str().ok()))
+                .unwrap_or("localhost:8001");
+            format!("{}://{}{}", scheme, host, state.base_path)
+        });
 
     let output_dir = PathBuf::from(&state.output_dir);
     let contents = build_mp4_playlist_content(&output_dir, &base_url);

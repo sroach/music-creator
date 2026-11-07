@@ -739,10 +739,10 @@
         <section class="songs-section">
             <div class="songs-section-header">
                 <h2>Generated Songs</h2>
-                <a href="playlist-mp4.m3u" class="btn-secondary" title="Download M3U playlist for Apple TV (IPTV Player, Infuse, VLC)" download="playlist-mp4.m3u">
+                <button id="mp4PlaylistBtn" class="btn-secondary" title="Download M3U playlist for Apple TV (IPTV Player, Infuse, VLC)">
                     <svg viewBox="0 0 24 24"><path d="M15 12h2l-3 4-3-4h2v-6h2v6zm-3-9h4v2h-4V3zM3 18h18v2H3v-2z"/></svg>
                     MP4 Playlist
-                </a>
+                </button>
             </div>
             <div id="songList" class="song-list">
                 <div class="empty-state">No songs generated yet.</div>
@@ -836,6 +836,21 @@
         const submitBtn = document.getElementById('submitBtn');
         const songList = document.getElementById('songList');
         let existingSongs = [];
+
+        // Build the base URL from the browser's current context (origin + path prefix).
+        // Used for generating playlist URLs that match the browser's address.
+        function getBaseUrl() {
+            // Use the path up to (and including) the last non-empty segment, e.g., "/music-creator"
+            const parts = window.location.pathname.split('/').filter(Boolean);
+            const basePath = '/' + parts.join('/');
+            return window.location.origin + basePath;
+        }
+
+        // MP4 Playlist download button: fetch the playlist with the browser's base URL
+        document.getElementById('mp4PlaylistBtn').addEventListener('click', function() {
+            const baseUrl = encodeURIComponent(getBaseUrl());
+            window.location.href = 'playlist-mp4.m3u?base_url=' + baseUrl;
+        });
 
         function formatFileSize(bytes) {
             if (bytes < 1024) return bytes + ' B';
