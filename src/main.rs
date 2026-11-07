@@ -236,6 +236,8 @@ struct AppState {
     api_key: Option<String>,
     output_dir: String,
     thumbnail_client: thumbnail_client::ThumbnailClient,
+    /// Base path prefix for the server (e.g., "/music-creator" behind nginx proxy).
+    base_path: String,
 }
 
 // Embed static files at compile time so deployment only needs the binary
@@ -811,7 +813,8 @@ async fn get_mp4_playlist(
     let host = headers.get("X-Forwarded-Host").and_then(|v| v.to_str().ok())
         .or_else(|| headers.get("Host").and_then(|v| v.to_str().ok()))
         .unwrap_or("localhost:8001");
-    let base_url = format!("{}://{}", scheme, host);
+    // Include the base path prefix (e.g., "/music-creator") for proxy deployments
+    let base_url = format!("{}://{}{}", scheme, host, state.base_path);
 
     let output_dir = PathBuf::from(&state.output_dir);
     let contents = build_mp4_playlist_content(&output_dir, &base_url);
@@ -1257,7 +1260,7 @@ async fn convert_to_video(
         Ok(mp4_filename) => {
             // Sync the MP4 playlist on disk with a localhost placeholder
             // (the endpoint regenerates with the correct URL on download)
-            let playlist_content = build_mp4_playlist_content(&output_dir, "http://localhost:8001");
+            let playlist_content = build_mp4_playlist_content(&output_dir, &format!("http://localhost:8001{}", state.base_path));
             let m3u_path = output_dir.join("playlist-mp4.m3u");
             let _ = fs::write(&m3u_path, &playlist_content);
             (StatusCode::OK, Json(ConvertResponse {
@@ -1470,10 +1473,14 @@ async fn main() -> Result<()> {
     // Ensure output directory exists
     fs::create_dir_all(&output_dir_path).unwrap_or_else(|_| ());
 
+    // Base path prefix for proxy deployment (e.g., "/music-creator")
+    let base_path = std::env::var("MUSIC_CREATOR_BASE_PATH").unwrap_or_default();
+
     let state = Arc::new(AppState {
         api_key,
         output_dir: output_dir_path.display().to_string(),
         thumbnail_client: thumbnail_client::ThumbnailClient::new(),
+        base_path,
     });
 
     // Initialize the m3u playlist on startup if output directory has songs
