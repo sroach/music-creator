@@ -389,6 +389,19 @@
             margin-top: var(--space-6);
         }
 
+        .songs-section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: var(--space-4);
+        }
+
+        .songs-section-header h2 {
+            font-size: var(--font-size-lg);
+            font-weight: var(--font-weight-semibold);
+            margin: 0;
+        }
+
         .songs-section h2 {
             font-size: var(--font-size-lg);
             font-weight: var(--font-weight-semibold);
@@ -724,7 +737,13 @@
         </div>
 
         <section class="songs-section">
-            <h2>Generated Songs</h2>
+            <div class="songs-section-header">
+                <h2>Generated Songs</h2>
+                <a href="playlist-mp4.m3u" class="btn-secondary" title="Download M3U playlist for Apple TV (IPTV Player, Infuse, VLC)" download="playlist-mp4.m3u">
+                    <svg viewBox="0 0 24 24"><path d="M15 12h2l-3 4-3-4h2v-6h2v6zm-3-9h4v2h-4V3zM3 18h18v2H3v-2z"/></svg>
+                    MP4 Playlist
+                </a>
+            </div>
             <div id="songList" class="song-list">
                 <div class="empty-state">No songs generated yet.</div>
             </div>

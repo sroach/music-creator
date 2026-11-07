@@ -744,6 +744,100 @@ fn embed_id3_tags(
     Ok(())
 }
 
+/// Build M3U playlist content for all MP4 videos in the output directory.
+/// Uses HTTP URLs so the playlist can be imported into Apple TV apps (IPTV Player, Infuse, VLC).
+fn build_mp4_playlist_content(output_dir: &PathBuf, base_url: &str) -> String {
+    if !output_dir.exists() {
+        return "#EXTM3U\n".to_string();
+    }
+
+    // Collect MP4 filenames from JSON metadata files
+    let mut entries: Vec<(String, String, String)> = Vec::new(); // (song_name, artist, mp4_filename)
+
+    if let Ok(dir_entries) = fs::read_dir(output_dir) {
+        for entry in dir_entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("json") {
+                if let Ok(content) = fs::read_to_string(&path) {
+                    if let Ok(metadata) = serde_json::from_str::<SongMetadata>(&content) {
+                        let safe_name = metadata.filename.trim_end_matches(".mp3");
+                        let mp4_filename = format!("{}.mp4", safe_name);
+                        let mp4_path = output_dir.join(&mp4_filename);
+                        if mp4_path.exists() {
+                            entries.push((
+                                metadata.song_name.clone(),
+                                metadata.artist.clone(),
+                                mp4_filename,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Sort by filename (alphabetically by song)
+    entries.sort_by(|a, b| a.2.cmp(&b.2));
+
+    // Build M3U content with #EXTM3U header and #EXTINF metadata
+    let mut lines = Vec::new();
+    lines.push("#EXTM3U".to_string());
+    for (song_name, artist, mp4_filename) in &entries {
+        let title = if artist != "Unknown" && !artist.is_empty() {
+            format!("{} - {}", artist, song_name)
+        } else {
+            song_name.clone()
+        };
+        let url = format!("{}/download/{}", base_url.trim_end_matches('/'), mp4_filename);
+        lines.push(format!("#EXTINF:-1,{}", title));
+        lines.push(url);
+    }
+
+    lines.join("\n") + "\n"
+}
+
+/// Serve the MP4 M3U playlist for download/import.
+/// Generates the playlist on-the-fly using the request's Host header so the URLs
+/// point to the correct server address (e.g., https://roach.gy/music-creator/download/song.mp4).
+async fn get_mp4_playlist(
+    state: axum::extract::State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Response {
+    use axum::http::StatusCode;
+
+    // Determine the base URL from the request headers
+    let scheme = headers.get("X-Forwarded-Proto").and_then(|v| v.to_str().ok())
+        .unwrap_or("http");
+    let host = headers.get("X-Forwarded-Host").and_then(|v| v.to_str().ok())
+        .or_else(|| headers.get("Host").and_then(|v| v.to_str().ok()))
+        .unwrap_or("localhost:8001");
+    let base_url = format!("{}://{}", scheme, host);
+
+    let output_dir = PathBuf::from(&state.output_dir);
+    let contents = build_mp4_playlist_content(&output_dir, &base_url);
+
+    // Also save to disk for local access
+    let m3u_path = output_dir.join("playlist-mp4.m3u");
+    if let Err(e) = fs::write(&m3u_path, &contents) {
+        eprintln!("⚠️  Warning: Failed to write playlist-mp4.m3u: {}", e);
+    }
+
+    let mut response_headers = HeaderMap::new();
+    response_headers.insert(
+        "Content-Type",
+        "audio/x-mpegurl"
+            .parse()
+            .expect("Content-Type should parse"),
+    );
+    response_headers.insert(
+        "Content-Disposition",
+        "attachment; filename=\"playlist-mp4.m3u\""
+            .parse()
+            .expect("Content-Disposition should parse"),
+    );
+    (StatusCode::OK, response_headers, Body::from(contents)).into_response()
+}
+
 /// Sync the m3u playlist file with all MP3 files in the output directory.
 /// Generates a simple m3u format (one absolute path per line) for Liquidsoap compatibility.
 /// No #EXTM3U header or #EXTINF metadata lines — just raw paths.
@@ -1161,6 +1255,11 @@ async fn convert_to_video(
     let title = req.title.filter(|t| !t.trim().is_empty());
     match convert_mp3_to_mp4(&mp3_path, &output_dir, title.as_deref()) {
         Ok(mp4_filename) => {
+            // Sync the MP4 playlist on disk with a localhost placeholder
+            // (the endpoint regenerates with the correct URL on download)
+            let playlist_content = build_mp4_playlist_content(&output_dir, "http://localhost:8001");
+            let m3u_path = output_dir.join("playlist-mp4.m3u");
+            let _ = fs::write(&m3u_path, &playlist_content);
             (StatusCode::OK, Json(ConvertResponse {
                 message: "Video created successfully".to_string(),
                 mp4_filename,
@@ -1401,6 +1500,7 @@ async fn main() -> Result<()> {
         .route("/download/{filename}", get(download_file))
         .route("/thumbnail/{filename}", post(generate_thumbnail_endpoint))
         .route("/convert/{filename}", post(convert_to_video))
+        .route("/playlist-mp4.m3u", get(get_mp4_playlist))
         .route("/static/favicon.svg", get(favicon))
         .layer(
             CorsLayer::new()
