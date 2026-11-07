@@ -3,6 +3,42 @@ use serde::Serialize;
 use std::path::Path;
 use std::process::Command;
 
+/// Find an FFmpeg binary that supports the `drawtext` filter.
+///
+/// Tries `ffmpeg-full` (Homebrew) first, then falls back to the default `ffmpeg` in PATH.
+fn find_ffmpeg() -> String {
+    // Candidates in order of preference
+    let candidates = [
+        "/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg", // Homebrew ffmpeg-full on Apple Silicon
+        "/usr/local/opt/ffmpeg-full/bin/ffmpeg",    // Homebrew ffmpeg-full on Intel
+        "ffmpeg",                                    // Default ffmpeg in PATH
+    ];
+
+    for candidate in &candidates {
+        if let Ok(output) = Command::new(candidate)
+            .args(["-filters"])
+            .output()
+        {
+            let filters = String::from_utf8_lossy(&output.stdout);
+            if filters.contains("drawtext") {
+                return candidate.to_string();
+            }
+        }
+    }
+
+    // Fallback to default ffmpeg even without drawtext
+    "ffmpeg".to_string()
+}
+
+/// Check if the given FFmpeg binary supports the `drawtext` filter.
+fn has_drawtext(ffmpeg_path: &str) -> bool {
+    if let Ok(output) = Command::new(ffmpeg_path).args(["-filters"]).output() {
+        let filters = String::from_utf8_lossy(&output.stdout);
+        return filters.contains("drawtext");
+    }
+    false
+}
+
 #[derive(Debug, Serialize)]
 pub struct ConvertResponse {
     pub message: String,
@@ -26,18 +62,12 @@ pub fn convert_mp3_to_mp4(
     output_dir: &Path,
     title: Option<&str>,
 ) -> Result<String> {
-    // Derive output filename from input
-    let mp4_filename = mp3_path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("output")
-        .to_string()
-        + ".mp4";
-
-    let mp4_path = output_dir.join(&mp4_filename);
+    // Find FFmpeg binary with drawtext support
+    let ffmpeg_path = find_ffmpeg();
+    let ffmpeg_has_drawtext = has_drawtext(&ffmpeg_path);
 
     // Check if ffmpeg is available
-    let ffmpeg_check = Command::new("ffmpeg").arg("-version").output();
+    let ffmpeg_check = Command::new(&ffmpeg_path).arg("-version").output();
     match ffmpeg_check {
         Ok(output) if output.status.success() => {
             // FFmpeg is available, proceed
@@ -48,6 +78,16 @@ pub fn convert_mp3_to_mp4(
             );
         }
     }
+
+    // Derive output filename from input
+    let mp4_filename = mp3_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("output")
+        .to_string()
+        + ".mp4";
+
+    let mp4_path = output_dir.join(&mp4_filename);
 
     // Check if a thumbnail exists for this song
     let safe_name = mp3_path
@@ -68,14 +108,22 @@ pub fn convert_mp3_to_mp4(
 
     // Song title text overlay: top center, white bold text with semi-transparent dark background box
     // matching the equalizer box style for visual consistency.
-    let title_filter = title.and_then(|t| {
-        // Escape single quotes for FFmpeg drawtext (replace ' with '\'')
-        let escaped = t.replace('\'', "'\\''");
-        Some(format!(
-            ",drawtext=text='{}':fontcolor=white:fontsize=48:fontfile=/System/Library/Fonts/Supplemental/Arial\\ Bold.ttf:x=(W-w)/2:y=h*0.05:box=1:boxcolor=0x1A0A16@0.6:boxborderw=25",
-            escaped
-        ))
-    }).unwrap_or_default();
+    // Only use drawtext if the FFmpeg binary supports it.
+    let title_filter = if ffmpeg_has_drawtext {
+        title.and_then(|t| {
+            // Escape single quotes for FFmpeg drawtext (replace ' with '\'')
+            let escaped = t.replace('\'', "'\\''");
+            Some(format!(
+                ",drawtext=text='{}':fontcolor=white:fontsize=48:fontfile=/System/Library/Fonts/Supplemental/Arial\\ Bold.ttf:x=(W-w)/2:y=h*0.05:box=1:boxcolor=0x1A0A16@0.6:boxborderw=25",
+                escaped
+            ))
+        }).unwrap_or_default()
+    } else {
+        if title.is_some() {
+            eprintln!("Warning: FFmpeg does not support 'drawtext' filter — song title will not be displayed. Install ffmpeg-full via 'brew install ffmpeg-full'.");
+        }
+        String::new()
+    };
 
     let filter = if has_thumbnail {
         // Full-size thumbnail as background, drawbox behind bars, then frequency bars overlay, optional title
@@ -94,7 +142,7 @@ pub fn convert_mp3_to_mp4(
     // Run FFmpeg to convert MP3 to MP4 with animated waveform visualization
     let status = if has_thumbnail {
         let thumb_str = thumbnail_path.to_str().unwrap();
-        Command::new("ffmpeg")
+        Command::new(&ffmpeg_path)
             .args([
                 "-y", // Overwrite output file
                 "-i", mp3_path.to_str().unwrap(), // Input audio (stream 0)
@@ -112,7 +160,7 @@ pub fn convert_mp3_to_mp4(
             ])
             .output()?
     } else {
-        Command::new("ffmpeg")
+        Command::new(&ffmpeg_path)
             .args([
                 "-y", // Overwrite output file
                 "-i", mp3_path.to_str().unwrap(), // Input audio
