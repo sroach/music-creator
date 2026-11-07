@@ -1148,18 +1148,8 @@ async fn convert_to_video(
         })).into_response();
     }
 
-    // Check if a thumbnail exists for this song
-    let safe_name = filename.trim_end_matches(".mp3");
-    let thumbnail_path = output_dir.join(format!("{}.png", safe_name));
-    
-    if !thumbnail_path.exists() {
-        return (StatusCode::BAD_REQUEST, Json(ConvertErrorResponse {
-            error: "No thumbnail found. Please generate a thumbnail first.".to_string(),
-        })).into_response();
-    }
-
-    // Convert MP3 to MP4 using FFmpeg
-    match convert_mp3_to_mp4(&mp3_path, &output_dir, &thumbnail_path) {
+    // Convert MP3 to MP4 using FFmpeg with waveform visualization
+    match convert_mp3_to_mp4(&mp3_path, &output_dir) {
         Ok(mp4_filename) => {
             (StatusCode::OK, Json(ConvertResponse {
                 message: "Video created successfully".to_string(),
