@@ -236,8 +236,9 @@ struct AppState {
     api_key: Option<String>,
     output_dir: String,
     thumbnail_client: thumbnail_client::ThumbnailClient,
-    /// Base path prefix for the server (e.g., "/music-creator" behind nginx proxy).
-    base_path: String,
+    /// Public base URL for external access (e.g., "https://roach.gy/music-creator").
+    /// Used as the fallback for playlist URLs when no `base_url` query param is provided.
+    public_url: String,
 }
 
 // Embed static files at compile time so deployment only needs the binary
@@ -804,22 +805,15 @@ fn build_mp4_playlist_content(output_dir: &PathBuf, base_url: &str) -> String {
 /// headers + config when the parameter is absent.
 async fn get_mp4_playlist(
     state: axum::extract::State<Arc<AppState>>,
-    headers: HeaderMap,
+    _headers: HeaderMap,
     axum::extract::Query(query): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Response {
     use axum::http::StatusCode;
 
-    // Prefer the browser-provided base URL; fall back to server headers + config
+    // Prefer the browser-provided base URL; fall back to the configured public URL
     let base_url = query.get("base_url")
         .cloned()
-        .unwrap_or_else(|| {
-            let scheme = headers.get("X-Forwarded-Proto").and_then(|v| v.to_str().ok())
-                .unwrap_or("http");
-            let host = headers.get("X-Forwarded-Host").and_then(|v| v.to_str().ok())
-                .or_else(|| headers.get("Host").and_then(|v| v.to_str().ok()))
-                .unwrap_or("localhost:8001");
-            format!("{}://{}{}", scheme, host, state.base_path)
-        });
+        .unwrap_or_else(|| state.public_url.clone());
 
     let output_dir = PathBuf::from(&state.output_dir);
     let contents = build_mp4_playlist_content(&output_dir, &base_url);
@@ -1263,9 +1257,9 @@ async fn convert_to_video(
     let title = req.title.filter(|t| !t.trim().is_empty());
     match convert_mp3_to_mp4(&mp3_path, &output_dir, title.as_deref()) {
         Ok(mp4_filename) => {
-            // Sync the MP4 playlist on disk with a localhost placeholder
+            // Sync the MP4 playlist on disk with the configured public URL
             // (the endpoint regenerates with the correct URL on download)
-            let playlist_content = build_mp4_playlist_content(&output_dir, &format!("http://localhost:8001{}", state.base_path));
+            let playlist_content = build_mp4_playlist_content(&output_dir, &state.public_url);
             let m3u_path = output_dir.join("playlist-mp4.m3u");
             let _ = fs::write(&m3u_path, &playlist_content);
             (StatusCode::OK, Json(ConvertResponse {
@@ -1478,14 +1472,17 @@ async fn main() -> Result<()> {
     // Ensure output directory exists
     fs::create_dir_all(&output_dir_path).unwrap_or_else(|_| ());
 
-    // Base path prefix for proxy deployment (e.g., "/music-creator")
-    let base_path = std::env::var("MUSIC_CREATOR_BASE_PATH").unwrap_or_default();
+    // Public URL for external access (e.g., "https://roach.gy/music-creator")
+    // Used as the fallback for playlist URLs when accessed without a browser context.
+    let public_url = std::env::var("MUSIC_CREATOR_PUBLIC_URL").unwrap_or_else(|_| {
+        format!("http://localhost:{}", port)
+    });
 
     let state = Arc::new(AppState {
         api_key,
         output_dir: output_dir_path.display().to_string(),
         thumbnail_client: thumbnail_client::ThumbnailClient::new(),
-        base_path,
+        public_url,
     });
 
     // Initialize the m3u playlist on startup if output directory has songs
