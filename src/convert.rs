@@ -57,21 +57,24 @@ pub fn convert_mp3_to_mp4(
 
     // Build the filter complex based on whether a thumbnail exists
     // Frequency analyzer settings: bar mode for distinct vertical equalizer bars,
-    // 1200x180 size, cyan-to-purple gradient, centered horizontally and 40px from the bottom edge.
+    // 1200x180 size, cyan-to-purple gradient, centered horizontally and 30px from the bottom edge.
+    // Semi-transparent dark box behind bars: 240px tall, full width, dark plum at 60% opacity,
+    // anchored to bottom - bars sit inside with 30px padding top/bottom.
     let freq_opts = "s=1200x180:mode=bar:colors=cyan|purple:rate=30:ascale=sqrt";
-    let freq_overlay = "(W-w)/2:H-h-40";
+    let box_opts = "y=ih-240:h=240:w=iw:color=0x1A0A16@0.6:t=fill";
+    let freq_overlay = "(W-w)/2:H-h-30";
 
     let filter = if has_thumbnail {
-        // Full-size thumbnail as background with frequency bars overlay near the bottom
+        // Full-size thumbnail as background, drawbox behind bars, then frequency bars overlay
         format!(
-            "[1:v]scale=1920:1080:force_original_aspect_ratio=decrease,setsar=1[thumb];[0:a]showfreqs={}[wave];[thumb][wave]overlay={}[outv]",
-            freq_opts, freq_overlay
+            "[1:v]scale=1920:1080:force_original_aspect_ratio=decrease,setsar=1[thumb];[0:a]showfreqs={}[wave];[thumb]drawbox={}[bg_with_box];[bg_with_box][wave]overlay={}[outv]",
+            freq_opts, box_opts, freq_overlay
         )
     } else {
-        // Dark background with frequency bars near the bottom
+        // Dark background, drawbox behind bars, then frequency bars overlay
         format!(
-            "color=s=1920x1080:r=30:c=0x000000[bg];[0:a]showfreqs={}[wave];[bg][wave]overlay={}[outv]",
-            freq_opts, freq_overlay
+            "color=s=1920x1080:r=30:c=0x000000[bg];[0:a]showfreqs={}[wave];[bg]drawbox={}[bg_with_box];[bg_with_box][wave]overlay={}[outv]",
+            freq_opts, box_opts, freq_overlay
         )
     };
 
