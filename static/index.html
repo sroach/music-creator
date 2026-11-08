@@ -977,8 +977,9 @@
                                     View`;
                         thumbBtn.removeAttribute('data-thumbnail');
                         thumbBtn.setAttribute('data-view-thumb', song.filename);
+                        thumbBtn.setAttribute('data-view-thumb-accepted', song.accepted === true ? 'true' : 'false');
                         thumbBtn.title = 'View thumbnail';
-                        thumbBtn.onclick = function() { viewThumbnail(song.filename); };
+                        thumbBtn.onclick = function() { viewThumbnail(song.filename, song.accepted === true); };
                     } else if (!hasThumbnail && thumbBtn.hasAttribute('data-view-thumb')) {
                         // Change from "View" to "Thumbnail"
                         thumbBtn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
@@ -1058,7 +1059,7 @@
                         </div>`;
                         let thumbBtn = '';
                         if (hasThumbnail) {
-                            thumbBtn = `<button class="btn-secondary" data-view-thumb="${song.filename}" title="View thumbnail">
+                            thumbBtn = `<button class="btn-secondary" data-view-thumb="${song.filename}" data-view-thumb-accepted="${isAccepted}" title="View thumbnail">
                                     <svg viewBox="0 0 24 24"><path d="M18 13v6H5v-6h13zM5 11a2 2 0 002 2h10a2 2 0 002-2V6a2 2 0 00-2-2H7a2 2 0 00-2 2v5zm0 0a9 9 0 1118 0 9 9 0 01-18 0z"/></svg>
                                     View
                                 </button>`;
@@ -1075,7 +1076,7 @@
                         </div>`;
                         let thumbBtn = '';
                         if (hasThumbnail) {
-                            thumbBtn = `<button class="btn-secondary" data-view-thumb="${song.filename}" title="View thumbnail">
+                            thumbBtn = `<button class="btn-secondary" data-view-thumb="${song.filename}" data-view-thumb-accepted="${isAccepted}" title="View thumbnail">
                                     <svg viewBox="0 0 24 24"><path d="M18 13v6H5v-6h13zM5 11a2 2 0 002 2h10a2 2 0 002-2V6a2 2 0 00-2-2H7a2 2 0 00-2 2v5zm0 0a9 9 0 1118 0 9 9 0 01-18 0z"/></svg>
                                     View
                                 </button>`;
@@ -1136,7 +1137,8 @@
                 // Attach event listeners to view thumbnail buttons
                 songList.querySelectorAll('[data-view-thumb]').forEach(button => {
                     button.addEventListener('click', function() {
-                        viewThumbnail(this.dataset.viewThumb);
+                        const accepted = this.dataset.viewThumbAccepted === 'true';
+                        viewThumbnail(this.dataset.viewThumb, accepted);
                     });
                 });
 
@@ -1616,10 +1618,11 @@
         const thumbnailModalImage = document.getElementById('thumbnailModalImage');
         const thumbnailModalDownload = document.getElementById('thumbnailModalDownload');
 
-        function viewThumbnail(filename) {
+        function viewThumbnail(filename, accepted) {
             const safeName = filename.replace('.mp3', '');
             const thumbFilename = safeName + '.png';
-            const url = 'download/' + encodeURIComponent(thumbFilename) + '?t=' + Date.now();
+            const downloadBase = accepted ? 'accepted' : 'download';
+            const url = downloadBase + '/' + encodeURIComponent(thumbFilename) + '?t=' + Date.now();
             thumbnailModalImage.src = url;
             thumbnailModalDownload.href = url;
             thumbnailModalDownload.download = thumbFilename;
