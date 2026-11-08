@@ -250,10 +250,15 @@ struct AppState {
 
 // Embed static files at compile time so deployment only needs the binary
 static INDEX_HTML: &str = include_str!("../static/index.html");
+static ACCEPTED_HTML: &str = include_str!("../static/accepted.html");
 static FAVICON_SVG: &[u8] = include_bytes!("../static/favicon.svg");
 
 async fn index() -> impl axum::response::IntoResponse {
     Html(INDEX_HTML.to_string()).into_response()
+}
+
+async fn accepted_page() -> impl axum::response::IntoResponse {
+    Html(ACCEPTED_HTML.to_string()).into_response()
 }
 
 async fn favicon() -> impl axum::response::IntoResponse {
@@ -1786,6 +1791,7 @@ async fn main() -> Result<()> {
         .route("/song/{filename}", get(get_song_details))
         .route("/download/{filename}", get(download_file))
         .route("/accept/{filename}", post(accept_song))
+        .route("/accepted", get(accepted_page))
         .route("/accepted/{filename}", get(download_accepted_file))
         .route("/thumbnail/{filename}", post(generate_thumbnail_endpoint))
         .route("/convert/{filename}", post(convert_to_video))
