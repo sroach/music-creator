@@ -168,6 +168,52 @@
             padding-top: var(--space-2);
         }
 
+        .video-actions {
+            display: flex;
+            gap: var(--space-2);
+            margin-top: var(--space-2);
+        }
+
+        .btn-icon {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-1);
+            padding: var(--space-1) var(--space-2);
+            font-size: var(--font-size-xs);
+            font-weight: var(--font-weight-medium);
+            font-family: var(--font-family);
+            color: var(--color-text-secondary);
+            background: var(--color-surface-secondary);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .btn-icon:hover {
+            color: var(--color-text);
+            background: var(--color-surface);
+            border-color: #D1D5DB;
+        }
+
+        .btn-icon:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-icon:disabled:hover {
+            color: var(--color-text-secondary);
+            background: var(--color-surface-secondary);
+            border-color: var(--color-border);
+        }
+
+        .btn-icon .spinner {
+            width: 12px;
+            height: 12px;
+            border: 2px solid rgba(59, 130, 246, 0.2);
+            border-top-color: var(--color-primary);
+        }
+
         .video-player-wrapper {
             padding: 0 var(--space-4) var(--space-4);
         }
@@ -501,6 +547,12 @@
                                 <div class="video-title clickable" data-filename="${mp3Filename}" tabindex="0" title="Click to view lyrics and style">${song.song_name}</div>
                                 <div class="video-artist">${song.artist}</div>
                                 <div class="video-date">${formatDate(song.created_at)}</div>
+                                <div class="video-actions">
+                                    <button class="btn-icon" data-regen="${mp3Filename}" data-song-name="${safeNameForTitle}" title="Regenerate video with current thumbnail">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                                        Regen Video
+                                    </button>
+                                </div>
                             </div>
                         </div>
                         <div class="video-player-wrapper">
@@ -619,11 +671,50 @@
             });
         }
 
-        // Override renderVideos to wire up titles after render
+        // Wire up regenerate video buttons after render
+        function wireUpRegenButtons() {
+            document.querySelectorAll('.btn-icon[data-regen]').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    regenerateVideo(this.dataset.regen, this.dataset.songName, this);
+                });
+            });
+        }
+
+        async function regenerateVideo(filename, songName, button) {
+            const originalText = button.innerHTML;
+            button.disabled = true;
+            button.innerHTML = '<span class="spinner"></span> Converting...';
+
+            try {
+                const response = await fetch('convert/' + encodeURIComponent(filename), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title: songName || null }),
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    // Reload the video list to pick up the regenerated video
+                    await loadVideos();
+                } else {
+                    button.innerHTML = originalText;
+                    button.disabled = false;
+                    alert('Conversion failed: ' + (result.error || 'Unknown error'));
+                }
+            } catch (err) {
+                button.innerHTML = originalText;
+                button.disabled = false;
+                alert('Network error: ' + err.message);
+            }
+        }
+
+        // Override renderVideos to wire up titles and regen buttons after render
         const originalRenderVideos = renderVideos;
         renderVideos = function(songs) {
             originalRenderVideos(songs);
             wireUpTitles();
+            wireUpRegenButtons();
         };
 
         loadVideos();
