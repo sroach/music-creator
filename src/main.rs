@@ -1507,22 +1507,35 @@ async fn convert_to_video(
     use axum::http::StatusCode;
 
     let output_dir = PathBuf::from(&state.output_dir);
-    let mp3_path = output_dir.join(&filename);
+    let accepted_dir = PathBuf::from(&state.accepted_dir);
 
-    if !mp3_path.exists() {
-        return (StatusCode::NOT_FOUND, Json(ConvertErrorResponse {
-            error: "MP3 file not found".to_string(),
-        })).into_response();
-    }
+    // Check output/ first, then accepted/
+    let mp3_path = output_dir.join(&filename);
+    let (mp3_path, target_dir) = if mp3_path.exists() {
+        (mp3_path, &output_dir)
+    } else {
+        let accepted_path = accepted_dir.join(&filename);
+        if !accepted_path.exists() {
+            return (StatusCode::NOT_FOUND, Json(ConvertErrorResponse {
+                error: "MP3 file not found".to_string(),
+            })).into_response();
+        }
+        (accepted_path, &accepted_dir)
+    };
 
     // Convert MP3 to MP4 using FFmpeg with waveform visualization and optional title
     let title = req.title.filter(|t| !t.trim().is_empty());
-    match convert_mp3_to_mp4(&mp3_path, &output_dir, title.as_deref()) {
+    match convert_mp3_to_mp4(&mp3_path, target_dir, title.as_deref()) {
         Ok(mp4_filename) => {
             // Sync the MP4 playlist on disk with the configured public URL
             // (the endpoint regenerates with the correct URL on download)
-            let playlist_content = build_mp4_playlist_content(&output_dir, &state.public_url);
-            let m3u_path = output_dir.join("playlist-mp4.m3u");
+            let (playlist_content, m3u_path) = if target_dir == &output_dir {
+                let content = build_mp4_playlist_content(&output_dir, &state.public_url);
+                (content, output_dir.join("playlist-mp4.m3u"))
+            } else {
+                let content = build_accepted_playlist_content(&accepted_dir, &state.public_url);
+                (content, accepted_dir.join("playlist-mp4.m3u"))
+            };
             let _ = fs::write(&m3u_path, &playlist_content);
             (StatusCode::OK, Json(ConvertResponse {
                 message: "Video created successfully".to_string(),
