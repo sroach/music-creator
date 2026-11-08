@@ -1133,7 +1133,8 @@ async fn list_files(
     (StatusCode::OK, Json(songs)).into_response()
 }
 
-/// Fetch full details (prompt, lyrics) for a single song from its JSON metadata
+/// Fetch full details (prompt, lyrics) for a single song from its JSON metadata.
+/// Checks both output/ and accepted/ directories.
 async fn get_song_details(
     state: axum::extract::State<Arc<AppState>>,
     Path(filename): Path<String>,
@@ -1141,7 +1142,15 @@ async fn get_song_details(
     use axum::http::StatusCode;
 
     let output_dir = PathBuf::from(&state.output_dir);
-    let json_path = output_dir.join(filename).with_extension("json");
+    let accepted_dir = PathBuf::from(&state.accepted_dir);
+
+    // Check output/ first, then accepted/
+    let json_path = output_dir.join(&filename).with_extension("json");
+    let json_path = if json_path.exists() {
+        json_path
+    } else {
+        accepted_dir.join(&filename).with_extension("json")
+    };
 
     if !json_path.exists() {
         return (StatusCode::NOT_FOUND, Json(ErrorResponse {
