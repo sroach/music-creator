@@ -46,6 +46,10 @@ struct CliArgs {
     /// Output directory for generated MP3 files (defaults to "output")
     #[arg(long, default_value = "output")]
     output_dir: String,
+
+    /// Accepted songs directory (defaults to "accepted")
+    #[arg(long, default_value = "accepted")]
+    accepted_dir: String,
 }
 
 impl std::fmt::Debug for CliArgs {
@@ -54,6 +58,7 @@ impl std::fmt::Debug for CliArgs {
             .field("api_key", &self.api_key.as_ref().map(|_| "***"))
             .field("port", &self.port)
             .field("output_dir", &self.output_dir)
+            .field("accepted_dir", &self.accepted_dir)
             .finish()
     }
 }
@@ -180,6 +185,7 @@ struct SongEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     mp4_filename: Option<String>,
     has_thumbnail: bool,
+    accepted: bool,
 }
 
 /// Response for fetching a single song's details
@@ -235,6 +241,7 @@ struct AudioConfig {
 struct AppState {
     api_key: Option<String>,
     output_dir: String,
+    accepted_dir: String,
     thumbnail_client: thumbnail_client::ThumbnailClient,
     /// Public base URL for external access (e.g., "https://roach.gy/music-creator").
     /// Used as the fallback for playlist URLs when no `base_url` query param is provided.
@@ -354,6 +361,7 @@ async fn generate(
     let (tx, rx) = tokio::sync::mpsc::channel::<String>(32);
 
     let output_dir = state.output_dir.clone();
+    let accepted_dir = state.accepted_dir.clone();
     let song_name = req.song_name.clone();
     let artist = req.artist.clone();
     let prompt = req.prompt.clone();
@@ -555,6 +563,19 @@ async fn generate(
             safe_name.replace(' ', "_")
         };
         let filename = format!("{}.mp3", safe_name);
+
+        // Check if this song already exists in the accepted directory
+        let accepted_mp3_path = PathBuf::from(&accepted_dir).join(&filename);
+        if accepted_mp3_path.exists() {
+            let error_json = serde_json::json!({"error": format!("A song with the name \"{}\" has already been accepted and cannot be overwritten.", song_name)});
+            let escaped_json = error_json.to_string()
+                .replace("\\", "\\\\")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r");
+            let error_event = format!("event: error\ndata: {}\n\n", escaped_json);
+            let _ = tx.send(error_event).await;
+            return;
+        }
 
         // Ensure output directory exists
         fs::create_dir_all(&output_dir).unwrap_or_else(|_| ());
@@ -840,6 +861,91 @@ async fn get_mp4_playlist(
     (StatusCode::OK, response_headers, Body::from(contents)).into_response()
 }
 
+/// Build M3U playlist content for all MP4 videos in the accepted directory.
+fn build_accepted_playlist_content(accepted_dir: &PathBuf, base_url: &str) -> String {
+    if !accepted_dir.exists() {
+        return "#EXTM3U\n".to_string();
+    }
+
+    let mut entries: Vec<(String, String, String)> = Vec::new();
+
+    if let Ok(dir_entries) = fs::read_dir(accepted_dir) {
+        for entry in dir_entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("json") {
+                if let Ok(content) = fs::read_to_string(&path) {
+                    if let Ok(metadata) = serde_json::from_str::<SongMetadata>(&content) {
+                        let safe_name = metadata.filename.trim_end_matches(".mp3");
+                        let mp4_filename = format!("{}.mp4", safe_name);
+                        let mp4_path = accepted_dir.join(&mp4_filename);
+                        if mp4_path.exists() {
+                            entries.push((
+                                metadata.song_name.clone(),
+                                metadata.artist.clone(),
+                                mp4_filename,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    entries.sort_by(|a, b| a.2.cmp(&b.2));
+
+    let mut lines = Vec::new();
+    lines.push("#EXTM3U".to_string());
+    for (song_name, artist, mp4_filename) in &entries {
+        let title = if artist != "Unknown" && !artist.is_empty() {
+            format!("{} - {}", artist, song_name)
+        } else {
+            song_name.clone()
+        };
+        let url = format!("{}/accepted/{}", base_url.trim_end_matches('/'), mp4_filename);
+        lines.push(format!("#EXTINF:-1,{}", title));
+        lines.push(url);
+    }
+
+    lines.join("\n") + "\n"
+}
+
+/// Serve the accepted songs MP4 M3U playlist for download/import.
+async fn get_accepted_playlist(
+    state: axum::extract::State<Arc<AppState>>,
+    axum::extract::Query(query): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Response {
+    use axum::http::StatusCode;
+
+    let base_url = query.get("base_url")
+        .cloned()
+        .unwrap_or_else(|| state.public_url.clone());
+
+    let accepted_dir = PathBuf::from(&state.accepted_dir);
+    let contents = build_accepted_playlist_content(&accepted_dir, &base_url);
+
+    // Save to disk for local access
+    fs::create_dir_all(&accepted_dir).unwrap_or_else(|_| ());
+    let m3u_path = accepted_dir.join("playlist-mp4.m3u");
+    if let Err(e) = fs::write(&m3u_path, &contents) {
+        eprintln!("⚠️  Warning: Failed to write accepted playlist-mp4.m3u: {}", e);
+    }
+
+    let mut response_headers = HeaderMap::new();
+    response_headers.insert(
+        "Content-Type",
+        "audio/x-mpegurl"
+            .parse()
+            .expect("Content-Type should parse"),
+    );
+    response_headers.insert(
+        "Content-Disposition",
+        "attachment; filename=\"playlist-accepted-mp4.m3u\""
+            .parse()
+            .expect("Content-Disposition should parse"),
+    );
+    (StatusCode::OK, response_headers, Body::from(contents)).into_response()
+}
+
 /// Sync the m3u playlist file with all MP3 files in the output directory.
 /// Generates a simple m3u format (one absolute path per line) for Liquidsoap compatibility.
 /// No #EXTM3U header or #EXTINF metadata lines — just raw paths.
@@ -956,42 +1062,34 @@ async fn download_file(
     }
 }
 
-async fn list_files(
-    state: axum::extract::State<Arc<AppState>>,
-) -> Response {
-    use axum::http::StatusCode;
-
-    let output_dir = PathBuf::from(&state.output_dir);
-    
-    if !output_dir.exists() {
-        return (StatusCode::OK, Json(Vec::<SongEntry>::new())).into_response();
-    }
-
+/// Helper: scan a directory for song metadata and build SongEntry items
+fn scan_songs_in_dir(dir: &PathBuf, accepted: bool) -> Vec<SongEntry> {
     let mut songs = Vec::new();
 
-    if let Ok(entries) = fs::read_dir(&output_dir) {
+    if !dir.exists() {
+        return songs;
+    }
+
+    if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().and_then(|e| e.to_str()) == Some("json") {
                 if let Ok(content) = fs::read_to_string(&path) {
                     if let Ok(metadata) = serde_json::from_str::<SongMetadata>(&content) {
-                        // Check if the corresponding MP3 exists
-                        let mp3_path = output_dir.join(&metadata.filename);
+                        let mp3_path = dir.join(&metadata.filename);
                         if mp3_path.exists() {
                             let file_size = mp3_path.metadata().ok().map(|m| m.len() as usize).unwrap_or(metadata.file_size_bytes);
 
-                            // Check if an MP4 conversion exists
                             let safe_name = metadata.filename.trim_end_matches(".mp3");
                             let mp4_filename = format!("{}.mp4", safe_name);
-                            let mp4_exists = output_dir.join(&mp4_filename).exists();
+                            let mp4_exists = dir.join(&mp4_filename).exists();
                             let mp4_filename_field = if mp4_exists {
                                 Some(mp4_filename)
                             } else {
                                 None
                             };
 
-                            // Check if a thumbnail exists for this song
-                            let thumbnail_path = output_dir.join(format!("{}.png", safe_name));
+                            let thumbnail_path = dir.join(format!("{}.png", safe_name));
                             let has_thumbnail = thumbnail_path.exists();
 
                             songs.push(SongEntry {
@@ -1002,6 +1100,7 @@ async fn list_files(
                                 file_size_bytes: file_size,
                                 mp4_filename: mp4_filename_field,
                                 has_thumbnail,
+                                accepted,
                             });
                         }
                     }
@@ -1010,8 +1109,26 @@ async fn list_files(
         }
     }
 
-    // Sort by created_at descending (newest first)
-    songs.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    songs
+}
+
+async fn list_files(
+    state: axum::extract::State<Arc<AppState>>,
+) -> Response {
+    use axum::http::StatusCode;
+
+    let output_dir = PathBuf::from(&state.output_dir);
+    let accepted_dir = PathBuf::from(&state.accepted_dir);
+
+    let mut songs = Vec::new();
+    songs.extend(scan_songs_in_dir(&output_dir, false));
+    songs.extend(scan_songs_in_dir(&accepted_dir, true));
+
+    // Sort by accepted first, then by created_at descending
+    songs.sort_by(|a, b| {
+        b.accepted.cmp(&a.accepted)
+            .then_with(|| b.created_at.cmp(&a.created_at))
+    });
 
     (StatusCode::OK, Json(songs)).into_response()
 }
@@ -1050,6 +1167,142 @@ async fn get_song_details(
         }
         Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse {
             error: "Failed to read metadata file".to_string(),
+        })).into_response(),
+    }
+}
+
+/// Accept a song: move it from output/ to accepted/.
+/// Moves MP3, JSON, PNG, and MP4 files if they exist.
+async fn accept_song(
+    state: axum::extract::State<Arc<AppState>>,
+    Path(filename): Path<String>,
+) -> Response {
+    use axum::http::StatusCode;
+
+    let output_dir = PathBuf::from(&state.output_dir);
+    let accepted_dir = PathBuf::from(&state.accepted_dir);
+
+    // Validate the MP3 exists in output/
+    let mp3_path = output_dir.join(&filename);
+    if !mp3_path.exists() {
+        return (StatusCode::NOT_FOUND, Json(ErrorResponse {
+            error: "Song not found in output directory".to_string(),
+        })).into_response();
+    }
+
+    // Check if already accepted
+    let accepted_mp3_path = accepted_dir.join(&filename);
+    if accepted_mp3_path.exists() {
+        return (StatusCode::CONFLICT, Json(ErrorResponse {
+            error: "Song is already accepted".to_string(),
+        })).into_response();
+    }
+
+    // Create accepted directory if needed
+    fs::create_dir_all(&accepted_dir).unwrap_or_else(|e| {
+        eprintln!("Failed to create accepted directory: {}", e);
+    });
+
+    let safe_name = filename.trim_end_matches(".mp3");
+    let mut moved_files = Vec::new();
+    let mut errors = Vec::new();
+
+    // Move MP3
+    if mp3_path.exists() {
+        match fs::rename(&mp3_path, accepted_dir.join(&filename)) {
+            Ok(_) => moved_files.push("MP3".to_string()),
+            Err(e) => errors.push(format!("MP3: {}", e)),
+        }
+    }
+
+    // Move JSON metadata
+    let json_path = output_dir.join(format!("{}.json", safe_name));
+    if json_path.exists() {
+        match fs::rename(&json_path, accepted_dir.join(format!("{}.json", safe_name))) {
+            Ok(_) => moved_files.push("JSON".to_string()),
+            Err(e) => errors.push(format!("JSON: {}", e)),
+        }
+    }
+
+    // Move PNG thumbnail
+    let png_path = output_dir.join(format!("{}.png", safe_name));
+    if png_path.exists() {
+        match fs::rename(&png_path, accepted_dir.join(format!("{}.png", safe_name))) {
+            Ok(_) => moved_files.push("PNG".to_string()),
+            Err(e) => errors.push(format!("PNG: {}", e)),
+        }
+    }
+
+    // Move MP4 video
+    let mp4_path = output_dir.join(format!("{}.mp4", safe_name));
+    if mp4_path.exists() {
+        match fs::rename(&mp4_path, accepted_dir.join(format!("{}.mp4", safe_name))) {
+            Ok(_) => moved_files.push("MP4".to_string()),
+            Err(e) => errors.push(format!("MP4: {}", e)),
+        }
+    }
+
+    if moved_files.is_empty() {
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse {
+            error: "Failed to move any files".to_string(),
+        })).into_response();
+    }
+
+    println!("✅ Accepted song: {} (moved: {:?})", filename, moved_files);
+    if !errors.is_empty() {
+        eprintln!("⚠️  Accept warnings: {:?}", errors);
+    }
+
+    let resp = serde_json::json!({
+        "message": format!("Song accepted. Moved files: {}", moved_files.join(", ")),
+        "moved_files": moved_files,
+    });
+    (StatusCode::OK, Json(resp)).into_response()
+}
+
+/// Download a file from the accepted directory.
+async fn download_accepted_file(
+    state: axum::extract::State<Arc<AppState>>,
+    Path(filename): Path<String>,
+) -> Response {
+    use axum::http::StatusCode;
+
+    let filepath = PathBuf::from(&state.accepted_dir).join(&filename);
+
+    if !filepath.exists() {
+        return (StatusCode::NOT_FOUND, Json(ErrorResponse {
+            error: "File not found in accepted directory".to_string(),
+        })).into_response();
+    }
+
+    match fs::read(&filepath) {
+        Ok(contents) => {
+            let mut headers = HeaderMap::new();
+            let content_type = if filename.ends_with(".mp4") {
+                "video/mp4"
+            } else if filename.ends_with(".png") {
+                "image/png"
+            } else if filename.ends_with(".json") {
+                "application/json"
+            } else {
+                "audio/mpeg"
+            };
+            headers.insert(
+                "Content-Type",
+                content_type
+                    .parse()
+                    .expect("Content-Type should parse"),
+            );
+            headers.insert(
+                "Content-Disposition",
+                format!("inline; filename=\"{}\"", filename)
+                    .parse()
+                    .expect("Content-Disposition should parse"),
+            );
+            (StatusCode::OK, headers, Body::from(contents)).into_response()
+        }
+        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse {
+            error: "Failed to read file".to_string(),
         })).into_response(),
     }
 }
@@ -1468,6 +1721,7 @@ async fn main() -> Result<()> {
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
     let output_dir_path = project_root.join(&cli.output_dir);
+    let accepted_dir_path = project_root.join(&cli.accepted_dir);
 
     // Ensure output directory exists
     fs::create_dir_all(&output_dir_path).unwrap_or_else(|_| ());
@@ -1481,6 +1735,7 @@ async fn main() -> Result<()> {
     let state = Arc::new(AppState {
         api_key,
         output_dir: output_dir_path.display().to_string(),
+        accepted_dir: accepted_dir_path.display().to_string(),
         thumbnail_client: thumbnail_client::ThumbnailClient::new(),
         public_url,
     });
@@ -1490,6 +1745,7 @@ async fn main() -> Result<()> {
 
     println!("🎵 Music Creator starting on http://localhost:{}", port);
     println!("📁 Output directory: {}", state.output_dir);
+    println!("📁 Accepted directory: {}", state.accepted_dir);
 
     // Log Foundation Models availability
     if lyrics_gen::is_available() {
@@ -1507,9 +1763,12 @@ async fn main() -> Result<()> {
         .route("/list", get(list_files))
         .route("/song/{filename}", get(get_song_details))
         .route("/download/{filename}", get(download_file))
+        .route("/accept/{filename}", post(accept_song))
+        .route("/accepted/{filename}", get(download_accepted_file))
         .route("/thumbnail/{filename}", post(generate_thumbnail_endpoint))
         .route("/convert/{filename}", post(convert_to_video))
         .route("/playlist-mp4.m3u", get(get_mp4_playlist))
+        .route("/playlist-accepted.m3u", get(get_accepted_playlist))
         .route("/static/favicon.svg", get(favicon))
         .layer(
             CorsLayer::new()

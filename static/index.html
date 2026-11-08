@@ -508,6 +508,38 @@
             justify-content: center;
         }
 
+        /* ===== Accepted Badge ===== */
+        .accepted-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-1);
+            font-size: var(--font-size-xs);
+            font-weight: var(--font-weight-medium);
+            color: var(--color-success);
+            background: var(--color-success-bg);
+            border: 1px solid var(--color-success-border);
+            border-radius: var(--radius-sm);
+            padding: 2px var(--space-2);
+            margin-left: var(--space-2);
+        }
+
+        .song-item.accepted {
+            border-color: var(--color-success-border);
+            background: linear-gradient(to right, var(--color-surface), var(--color-success-bg));
+        }
+
+        .btn-accept {
+            flex: 1;
+            min-width: 0;
+            justify-content: center;
+            background: var(--color-success);
+            color: white;
+        }
+
+        .btn-accept:hover {
+            background: #15803d;
+        }
+
         /* ===== Modal ===== */
         .modal-overlay {
             display: none;
@@ -739,10 +771,16 @@
         <section class="songs-section">
             <div class="songs-section-header">
                 <h2>Generated Songs</h2>
-                <button id="mp4PlaylistBtn" class="btn-secondary" title="Download M3U playlist for Apple TV (IPTV Player, Infuse, VLC)">
-                    <svg viewBox="0 0 24 24"><path d="M15 12h2l-3 4-3-4h2v-6h2v6zm-3-9h4v2h-4V3zM3 18h18v2H3v-2z"/></svg>
-                    MP4 Playlist
-                </button>
+                <div style="display: flex; gap: var(--space-2);">
+                    <button id="mp4PlaylistBtn" class="btn-secondary" title="Download M3U playlist for Apple TV (IPTV Player, Infuse, VLC)">
+                        <svg viewBox="0 0 24 24"><path d="M15 12h2l-3 4-3-4h2v-6h2v6zm-3-9h4v2h-4V3zM3 18h18v2H3v-2z"/></svg>
+                        MP4 Playlist
+                    </button>
+                    <button id="acceptedPlaylistBtn" class="btn-secondary" title="Download M3U playlist of accepted songs only">
+                        <svg viewBox="0 0 24 24"><path d="M15 12h2l-3 4-3-4h2v-6h2v6zm-3-9h4v2h-4V3zM3 18h18v2H3v-2z"/></svg>
+                        Accepted Playlist
+                    </button>
+                </div>
             </div>
             <div id="songList" class="song-list">
                 <div class="empty-state">No songs generated yet.</div>
@@ -852,6 +890,50 @@
             window.location.href = 'playlist-mp4.m3u?base_url=' + baseUrl;
         });
 
+        // Accepted Playlist download button
+        document.getElementById('acceptedPlaylistBtn').addEventListener('click', function() {
+            const baseUrl = encodeURIComponent(getBaseUrl());
+            window.location.href = 'playlist-accepted.m3u?base_url=' + baseUrl;
+        });
+
+        // Accept a song: move it from output/ to accepted/
+        async function acceptSong(filename, button) {
+            const songName = filename.replace('.mp3', '');
+            if (!confirm(`Accept "${songName}" as the final version?\n\nThis will move the song to the accepted directory, protecting it from being overwritten by future generations.`)) {
+                return;
+            }
+
+            // Show loading state
+            button.disabled = true;
+            button.innerHTML = `<span class="spinner"></span> Accepting...`;
+
+            try {
+                const response = await fetch(`accept/${filename}`, {
+                    method: 'POST'
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    showStatus('error', result.error || 'Failed to accept song');
+                    button.disabled = false;
+                    button.innerHTML = `<svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
+                        Accept`;
+                    return;
+                }
+
+                showStatus('success', result.message || 'Song accepted successfully!');
+                // Reload the song list to reflect the change
+                await loadSongs();
+            } catch (err) {
+                console.error('Failed to accept song:', err);
+                showStatus('error', 'Failed to accept song: ' + err.message);
+                button.disabled = false;
+                button.innerHTML = `<svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
+                    Accept`;
+            }
+        }
+
         function formatFileSize(bytes) {
             if (bytes < 1024) return bytes + ' B';
             if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
@@ -950,15 +1032,29 @@
                 songList.innerHTML = songs.map(song => {
                     const hasMp4 = song.mp4_filename != null;
                     const hasThumbnail = song.has_thumbnail === true;
-                    const audioDownload = `<a href="download/${song.filename}" class="btn-secondary" download="${song.filename}">
+                    const isAccepted = song.accepted === true;
+
+                    // Determine download base URL
+                    const downloadBase = isAccepted ? 'accepted' : 'download';
+
+                    const audioDownload = `<a href="${downloadBase}/${song.filename}" class="btn-secondary" download="${song.filename}">
                                     <svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-6 2h12v2H6z"/></svg>
                                     MP3
                                 </a>`;
+
+                    // Accept button (only for non-accepted songs)
+                    const acceptBtn = isAccepted
+                        ? ''
+                        : `<button class="btn-secondary btn-accept" data-accept="${song.filename}" title="Accept this song as final version">
+                                    <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
+                                    Accept
+                                </button>`;
+
                     let playerHtml = '';
                     let videoActions = '';
                     if (hasMp4) {
                         playerHtml = `<div class="song-player-card">
-                            <video controls preload="none" src="download/${song.mp4_filename}?t=${song.created_at}"></video>
+                            <video controls preload="none" src="${downloadBase}/${song.mp4_filename}?t=${song.created_at}"></video>
                         </div>`;
                         let thumbBtn = '';
                         if (hasThumbnail) {
@@ -967,7 +1063,7 @@
                                     View
                                 </button>`;
                         }
-                        videoActions = `${thumbBtn}<a href="download/${song.mp4_filename}" class="btn-secondary" download="${song.mp4_filename}">
+                        videoActions = `${thumbBtn}<a href="${downloadBase}/${song.mp4_filename}" class="btn-secondary" download="${song.mp4_filename}">
                                     <svg viewBox="0 0 24 24"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-6 2h12v2H6z"/></svg>
                                     Video
                                 </a>`;
@@ -975,7 +1071,7 @@
                         const safeName = song.filename.replace('.mp3', '');
                         const thumbFilename = safeName + '.png';
                         playerHtml = `<div class="song-player-card">
-                            <audio controls preload="none" src="download/${song.filename}?t=${song.created_at}"></audio>
+                            <audio controls preload="none" src="${downloadBase}/${song.filename}?t=${song.created_at}"></audio>
                         </div>`;
                         let thumbBtn = '';
                         if (hasThumbnail) {
@@ -995,10 +1091,13 @@
                                 </button>`;
                         videoActions = `${thumbBtn}${convertBtn}`;
                     }
+                    const acceptedBadge = isAccepted
+                        ? '<span class="accepted-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Accepted</span>'
+                        : '';
                     return `
-                    <div class="song-item">
+                    <div class="song-item${isAccepted ? ' accepted' : ''}">
                         <div class="song-info">
-                            <div class="song-title" data-filename="${song.filename}" tabindex="0" title="Click to view details">${song.song_name}</div>
+                            <div class="song-title" data-filename="${song.filename}" tabindex="0" title="Click to view details">${song.song_name}${acceptedBadge}</div>
                             <div class="song-meta">
                                 ${song.artist} · ${formatFileSize(song.file_size_bytes)} · ${formatDate(song.created_at)}
                             </div>
@@ -1008,6 +1107,7 @@
                             <div class="song-actions">
                                 ${audioDownload}
                                 ${videoActions}
+                                ${acceptBtn}
                             </div>
                         </div>
                     </div>
@@ -1050,6 +1150,13 @@
                             e.preventDefault();
                             fetchSongDetails(this.dataset.filename);
                         }
+                    });
+                });
+
+                // Attach event listeners to accept buttons
+                songList.querySelectorAll('[data-accept]').forEach(button => {
+                    button.addEventListener('click', function() {
+                        acceptSong(this.dataset.accept, this);
                     });
                 });
             } catch (err) {
