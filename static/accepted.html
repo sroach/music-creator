@@ -216,6 +216,150 @@
             to { transform: rotate(360deg); }
         }
 
+        /* ===== Buttons ===== */
+        .btn-secondary {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-2);
+            padding: var(--space-2) var(--space-3);
+            font-size: var(--font-size-sm);
+            font-weight: var(--font-weight-medium);
+            font-family: var(--font-family);
+            color: var(--color-text);
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .btn-secondary:hover {
+            background: var(--color-surface-secondary);
+            border-color: #D1D5DB;
+        }
+
+        .btn-secondary.copied {
+            color: var(--color-success);
+            border-color: var(--color-success-border);
+            background: var(--color-success-bg);
+        }
+
+        /* ===== Modal ===== */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.4);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: var(--space-5);
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-lg);
+            padding: var(--space-5);
+            max-width: 600px;
+            width: 100%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: var(--shadow-md);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: var(--space-4);
+        }
+
+        .modal-header h3 {
+            font-size: var(--font-size-lg);
+            font-weight: var(--font-weight-semibold);
+            color: var(--color-text);
+            letter-spacing: -0.025em;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: var(--color-text-tertiary);
+            padding: var(--space-1);
+            border-radius: var(--radius-sm);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-close:hover {
+            background: var(--color-surface-secondary);
+            color: var(--color-text);
+        }
+
+        .modal-field {
+            margin-bottom: var(--space-4);
+        }
+
+        .modal-field label {
+            display: block;
+            font-size: var(--font-size-sm);
+            font-weight: var(--font-weight-medium);
+            color: var(--color-text-secondary);
+            margin-bottom: var(--space-1);
+        }
+
+        .modal-field .modal-value {
+            font-size: var(--font-size-base);
+            color: var(--color-text);
+            background: var(--color-surface-secondary);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-sm);
+            padding: var(--space-3) var(--space-4);
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-family: var(--font-family);
+            line-height: 1.5;
+        }
+
+        .modal-field .modal-value.lyrics {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .modal-field-actions {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: var(--space-1);
+        }
+
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: var(--space-2);
+            margin-top: var(--space-5);
+        }
+
+        /* ===== Clickable Title ===== */
+        .video-title.clickable {
+            cursor: pointer;
+            color: var(--color-primary);
+        }
+
+        .video-title.clickable:hover {
+            color: var(--color-primary-hover);
+            text-decoration: underline;
+        }
+
         /* ===== Responsive ===== */
         @media (max-width: 640px) {
             .container {
@@ -252,6 +396,52 @@
             <div class="loading-state">
                 <div class="spinner"></div>
                 <div>Loading videos...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Details Modal -->
+    <div id="detailsModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="detailsModalTitle">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="detailsModalTitle">Song Details</h3>
+                <button class="modal-close" id="detailsModalClose" aria-label="Close">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-field">
+                <label>Song Name</label>
+                <div class="modal-value" id="detailsSongName"></div>
+            </div>
+            <div class="modal-field">
+                <label>Artist</label>
+                <div class="modal-value" id="detailsArtist"></div>
+            </div>
+            <div class="modal-field">
+                <label>Style Prompt</label>
+                <div class="modal-value" id="detailsPrompt"></div>
+                <div class="modal-field-actions">
+                    <button class="btn-secondary" id="copyPromptBtn" onclick="copyToClipboard('detailsPrompt', 'copyPromptBtn')">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                        Copy Style
+                    </button>
+                </div>
+            </div>
+            <div class="modal-field">
+                <label>Lyrics</label>
+                <div class="modal-value lyrics" id="detailsLyrics"></div>
+                <div class="modal-field-actions">
+                    <button class="btn-secondary" id="copyLyricsBtn" onclick="copyToClipboard('detailsLyrics', 'copyLyricsBtn')">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                        Copy Lyrics
+                    </button>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-secondary" id="detailsModalCancel">Close</button>
             </div>
         </div>
     </div>
@@ -300,12 +490,15 @@
                 const thumbnailSrc = 'accepted/' + safeName + '.png';
                 const videoSrc = 'accepted/' + song.mp4_filename;
 
+                const mp3Filename = song.filename || (song.mp4_filename ? song.mp4_filename.replace('.mp4', '.mp3') : null);
+                const safeNameForTitle = song.song_name.replace(/'/g, '&#39;');
+
                 return `
                     <div class="video-card">
                         <div class="video-card-inner">
-                            <img class="video-thumbnail" src="${thumbnailSrc}" alt="${song.song_name}" onerror="this.style.display='none'">
+                            <img class="video-thumbnail" src="${thumbnailSrc}" alt="${safeNameForTitle}" onerror="this.style.display='none'">
                             <div class="video-content">
-                                <div class="video-title">${song.song_name}</div>
+                                <div class="video-title clickable" data-filename="${mp3Filename}" tabindex="0" title="Click to view lyrics and style">${song.song_name}</div>
                                 <div class="video-artist">${song.artist}</div>
                                 <div class="video-date">${formatDate(song.created_at)}</div>
                             </div>
@@ -341,6 +534,97 @@
                 `;
             }
         }
+
+        // --- Details Modal ---
+        const detailsModal = document.getElementById('detailsModal');
+        const detailsModalClose = document.getElementById('detailsModalClose');
+        const detailsModalCancel = document.getElementById('detailsModalCancel');
+
+        async function fetchSongDetails(filename) {
+            if (!filename) return;
+            try {
+                const response = await fetch('song/' + encodeURIComponent(filename));
+                if (!response.ok) {
+                    alert('Failed to load song details.');
+                    return;
+                }
+                const song = await response.json();
+                openDetailsModal(song);
+            } catch (err) {
+                console.error('Failed to fetch song details:', err);
+                alert('Network error: ' + err.message);
+            }
+        }
+
+        function openDetailsModal(song) {
+            document.getElementById('detailsSongName').textContent = song.song_name;
+            document.getElementById('detailsArtist').textContent = song.artist;
+            document.getElementById('detailsPrompt').textContent = song.prompt;
+            document.getElementById('detailsLyrics').textContent = song.lyrics;
+            detailsModal.classList.add('active');
+            detailsModalClose.focus();
+        }
+
+        function closeDetailsModal() {
+            detailsModal.classList.remove('active');
+        }
+
+        detailsModalClose.addEventListener('click', closeDetailsModal);
+        detailsModalCancel.addEventListener('click', closeDetailsModal);
+
+        detailsModal.addEventListener('click', function(e) {
+            if (e.target === detailsModal) {
+                closeDetailsModal();
+            }
+        });
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && detailsModal.classList.contains('active')) {
+                closeDetailsModal();
+            }
+        });
+
+        // Copy to clipboard
+        window.copyToClipboard = function(valueElementId, buttonId) {
+            const text = document.getElementById(valueElementId).textContent;
+            navigator.clipboard.writeText(text).then(function() {
+                const btn = document.getElementById(buttonId);
+                const originalHTML = btn.innerHTML;
+                btn.classList.add('copied');
+                btn.innerHTML = `
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    Copied!
+                `;
+                setTimeout(function() {
+                    btn.classList.remove('copied');
+                    btn.innerHTML = originalHTML;
+                }, 2000);
+            }).catch(function(err) {
+                console.error('Copy failed:', err);
+            });
+        };
+
+        // Wire up clickable titles after render
+        function wireUpTitles() {
+            document.querySelectorAll('.video-title.clickable[data-filename]').forEach(function(title) {
+                title.addEventListener('click', function() {
+                    fetchSongDetails(this.dataset.filename);
+                });
+                title.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        fetchSongDetails(this.dataset.filename);
+                    }
+                });
+            });
+        }
+
+        // Override renderVideos to wire up titles after render
+        const originalRenderVideos = renderVideos;
+        renderVideos = function(songs) {
+            originalRenderVideos(songs);
+            wireUpTitles();
+        };
 
         loadVideos();
     </script>
