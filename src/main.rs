@@ -21,6 +21,7 @@ use id3::{Tag, TagLike, Version};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
+    io::{Read, Seek},
     net::SocketAddr,
     path::PathBuf,
     sync::Arc,
@@ -1021,9 +1022,112 @@ fn sync_m3u_playlist(output_dir: &PathBuf) {
     }
 }
 
+/// Serve a file with HTTP Range request support for video streaming.
+fn serve_file_with_range(filepath: &PathBuf, filename: &str, headers: &HeaderMap) -> Response {
+    use axum::http::StatusCode;
+
+    let file = match fs::File::open(filepath) {
+        Ok(f) => f,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse {
+            error: "Failed to read file".to_string(),
+        })).into_response(),
+    };
+    let file_len = match file.metadata() {
+        Ok(m) => m.len(),
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse {
+            error: "Failed to read file metadata".to_string(),
+        })).into_response(),
+    };
+
+    // Determine content type based on file extension
+    let content_type = if filename.ends_with(".mp4") {
+        "video/mp4"
+    } else if filename.ends_with(".png") {
+        "image/png"
+    } else if filename.ends_with(".json") {
+        "application/json"
+    } else {
+        "audio/mpeg"
+    };
+
+    // Check for Range header
+    if let Some(range_header) = headers.get("Range") {
+        if let Ok(range_str) = range_header.to_str() {
+            // Parse "bytes=start-end" format
+            if let Some(range_bytes) = range_str.strip_prefix("bytes=") {
+                let parts: Vec<&str> = range_bytes.split('-').collect();
+                if parts.len() == 2 {
+                    if let (Ok(start), Ok(end)) = (
+                        parts[0].parse::<u64>(),
+                        parts[1].parse::<u64>(),
+                    ) {
+                        let end = end.min(file_len.saturating_sub(1));
+                        let content_length = end.saturating_sub(start) + 1;
+
+                        let mut file = file;
+                        let _ = file.seek(std::io::SeekFrom::Start(start));
+                        let mut buffer = Vec::with_capacity(content_length as usize);
+                        let _ = file.take(content_length).read_to_end(&mut buffer);
+
+                        let mut resp_headers = HeaderMap::new();
+                        resp_headers.insert(
+                            "Content-Type",
+                            content_type.parse().expect("Content-Type should parse"),
+                        );
+                        resp_headers.insert(
+                            "Content-Range",
+                            format!("bytes {}-{}/{}", start, end, file_len)
+                                .parse().expect("Content-Range should parse"),
+                        );
+                        resp_headers.insert(
+                            "Content-Length",
+                            content_length.to_string().parse().expect("Content-Length should parse"),
+                        );
+                        resp_headers.insert(
+                            "Accept-Ranges",
+                            "bytes".parse().expect("Accept-Ranges should parse"),
+                        );
+                        return (StatusCode::PARTIAL_CONTENT, resp_headers, Body::from(buffer)).into_response();
+                    }
+                }
+            }
+        }
+    }
+
+    // No Range header — serve the entire file
+    let mut file = file;
+    let mut buffer = Vec::with_capacity(file_len as usize);
+    if file.read_to_end(&mut buffer).is_err() {
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse {
+            error: "Failed to read file".to_string(),
+        })).into_response();
+    }
+
+    let mut resp_headers = HeaderMap::new();
+    resp_headers.insert(
+        "Content-Type",
+        content_type.parse().expect("Content-Type should parse"),
+    );
+    resp_headers.insert(
+        "Content-Disposition",
+        format!("inline; filename=\"{}\"", filename)
+            .parse().expect("Content-Disposition should parse"),
+    );
+    resp_headers.insert(
+        "Content-Length",
+        file_len.to_string().parse().expect("Content-Length should parse"),
+    );
+    resp_headers.insert(
+        "Accept-Ranges",
+        "bytes".parse().expect("Accept-Ranges should parse"),
+    );
+    (StatusCode::OK, resp_headers, Body::from(buffer)).into_response()
+}
+
 async fn download_file(
     state: axum::extract::State<Arc<AppState>>,
     Path(filename): Path<String>,
+    headers: HeaderMap,
 ) -> Response {
     use axum::http::StatusCode;
 
@@ -1035,36 +1139,7 @@ async fn download_file(
         })).into_response();
     }
 
-    match fs::read(&filepath) {
-        Ok(contents) => {
-            let mut headers = HeaderMap::new();
-            // Determine content type based on file extension
-            let content_type = if filename.ends_with(".mp4") {
-                "video/mp4"
-            } else if filename.ends_with(".png") {
-                "image/png"
-            } else {
-                "audio/mpeg"
-            };
-            headers.insert(
-                "Content-Type",
-                content_type
-                    .parse()
-                    .expect("Content-Type should parse"),
-            );
-            headers.insert(
-                "Content-Disposition",
-                format!("inline; filename=\"{}\"", filename)
-                    .parse()
-                    .expect("Content-Disposition should parse"),
-            );
-
-            (StatusCode::OK, headers, Body::from(contents)).into_response()
-        }
-        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse {
-            error: "Failed to read file".to_string(),
-        })).into_response(),
-    }
+    serve_file_with_range(&filepath, &filename, &headers)
 }
 
 /// Helper: scan a directory for song metadata and build SongEntry items
@@ -1274,10 +1349,11 @@ async fn accept_song(
     (StatusCode::OK, Json(resp)).into_response()
 }
 
-/// Download a file from the accepted directory.
+/// Download a file from the accepted directory with Range request support.
 async fn download_accepted_file(
     state: axum::extract::State<Arc<AppState>>,
     Path(filename): Path<String>,
+    headers: HeaderMap,
 ) -> Response {
     use axum::http::StatusCode;
 
@@ -1289,36 +1365,7 @@ async fn download_accepted_file(
         })).into_response();
     }
 
-    match fs::read(&filepath) {
-        Ok(contents) => {
-            let mut headers = HeaderMap::new();
-            let content_type = if filename.ends_with(".mp4") {
-                "video/mp4"
-            } else if filename.ends_with(".png") {
-                "image/png"
-            } else if filename.ends_with(".json") {
-                "application/json"
-            } else {
-                "audio/mpeg"
-            };
-            headers.insert(
-                "Content-Type",
-                content_type
-                    .parse()
-                    .expect("Content-Type should parse"),
-            );
-            headers.insert(
-                "Content-Disposition",
-                format!("inline; filename=\"{}\"", filename)
-                    .parse()
-                    .expect("Content-Disposition should parse"),
-            );
-            (StatusCode::OK, headers, Body::from(contents)).into_response()
-        }
-        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse {
-            error: "Failed to read file".to_string(),
-        })).into_response(),
-    }
+    serve_file_with_range(&filepath, &filename, &headers)
 }
 
 /// SSE handler for thumbnail generation endpoint.
