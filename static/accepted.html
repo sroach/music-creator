@@ -385,20 +385,21 @@
         /* ===== Lyrics Overlay ===== */
         .lyrics-overlay {
             position: absolute;
-            bottom: 0;
+            bottom: 48px; /* Leave space for video controls bar */
             left: 0;
             right: 0;
             max-height: 45%;
             background: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
             padding: var(--space-5) var(--space-6) var(--space-4);
             overflow-y: auto;
-            pointer-events: auto;
+            pointer-events: none;
             opacity: 0;
             transition: opacity 0.3s ease;
         }
 
         .lyrics-overlay.active {
             opacity: 1;
+            pointer-events: auto;
         }
 
         .lyrics-overlay pre {
