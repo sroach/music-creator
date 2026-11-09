@@ -772,6 +772,7 @@
 
         let allSongs = [];
         let currentSong = null;
+        let currentSongIndex = -1;
         let currentLyrics = '';
         let lyricsVisible = false;
 
@@ -855,7 +856,7 @@
             });
         }
 
-        function playSong(item) {
+        function playSong(item, skipIndexUpdate) {
             const videoFilename = item.dataset.video;
             const mp3Filename = item.dataset.filename;
             const songName = item.dataset.songName;
@@ -866,6 +867,11 @@
                 el.classList.remove('active');
             });
             item.classList.add('active');
+
+            // Track the index of the currently playing song
+            if (!skipIndexUpdate) {
+                currentSongIndex = Array.from(document.querySelectorAll('.song-item')).indexOf(item);
+            }
 
             // Build video source
             const safeName = videoFilename.replace('.mp4', '');
@@ -1125,6 +1131,23 @@
                 `;
             }
         });
+
+        // Auto-play next song when current one ends
+        mainPlayer.addEventListener('ended', function() {
+            playNextSong();
+        });
+
+        function playNextSong() {
+            if (allSongs.length === 0) return;
+            let nextIndex = currentSongIndex + 1;
+            if (nextIndex >= allSongs.length) {
+                nextIndex = 0; // Loop back to the beginning
+            }
+            const songItems = document.querySelectorAll('.song-item');
+            if (songItems.length > nextIndex) {
+                playSong(songItems[nextIndex], false);
+            }
+        }
 
         loadVideos();
     </script>
