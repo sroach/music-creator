@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <title>Admin Dashboard - Music Creator</title>
+    <style>
+        :root {
+            --color-primary: #3B82F6;
+            --color-primary-hover: #2563EB;
+            --color-success: #16A34A;
+            --color-success-bg: #F0FDF4;
+            --color-success-border: #BBF7D0;
+            --color-danger: #DC2626;
+            --color-danger-bg: #FEF2F2;
+            --color-danger-border: #FECACA;
+            --color-warning: #D97706;
+            --color-warning-bg: #FFFBEB;
+            --color-warning-border: #FDE68A;
+            --color-surface: #FFFFFF;
+            --color-surface-secondary: #F9FAFB;
+            --color-text: #111827;
+            --color-text-secondary: #4B5563;
+            --color-text-tertiary: #6B7280;
+            --color-border: #E5E7EB;
+            --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            --font-size-xs: 12px;
+            --font-size-sm: 14px;
+            --font-size-base: 16px;
+            --font-size-lg: 24px;
+            --font-weight-normal: 400;
+            --font-weight-medium: 500;
+            --font-weight-semibold: 600;
+            --font-weight-bold: 700;
+            --space-1: 4px;
+            --space-2: 8px;
+            --space-3: 12px;
+            --space-4: 16px;
+            --space-5: 24px;
+            --space-6: 32px;
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+        }
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: var(--font-family);
+            font-size: var(--font-size-base);
+            color: var(--color-text);
+            background-color: var(--color-surface-secondary);
+            min-height: 100vh;
+            line-height: 1.5;
+        }
+        .page-wrapper { height: 100vh; display: flex; flex-direction: column; }
+        .page-header {
+            flex-shrink: 0;
+            padding: var(--space-4) var(--space-5);
+            background: var(--color-surface);
+            border-bottom: 1px solid var(--color-border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .page-header h1 {
+            font-size: var(--font-size-lg);
+            font-weight: var(--font-weight-bold);
+            letter-spacing: -0.025em;
+        }
+        .header-right { display: flex; align-items: center; gap: var(--space-3); }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-2);
+            padding: var(--space-2) var(--space-3);
+            font-family: var(--font-family);
+            font-size: var(--font-size-sm);
+            font-weight: var(--font-weight-medium);
+            border: none;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: background-color 0.15s;
+            text-decoration: none;
+        }
+        .btn-primary { background: var(--color-primary); color: white; }
+        .btn-primary:hover { background: var(--color-primary-hover); }
+        .btn-danger { background: var(--color-danger); color: white; }
+        .btn-danger:hover { background: #B91C1C; }
+        .btn-ghost {
+            background: transparent;
+            color: var(--color-text-secondary);
+            border: 1px solid var(--color-border);
+        }
+        .btn-ghost:hover { background: var(--color-surface-secondary); }
+        .btn-sm { padding: var(--space-1) var(--space-2); font-size: var(--font-size-xs); }
+        .container { max-width: 1000px; margin: 0 auto; padding: var(--space-5); width: 100%; flex: 1; overflow-y: auto; }
+        .song-list { display: flex; flex-direction: column; gap: var(--space-3); }
+        .song-card {
+            background: var(--color-surface);
+            border-radius: var(--radius-md);
+            box-shadow: var(--shadow-sm);
+            padding: var(--space-4);
+            display: flex;
+            align-items: center;
+            gap: var(--space-4);
+        }
+        .song-info { flex: 1; min-width: 0; }
+        .song-name {
+            font-weight: var(--font-weight-semibold);
+            font-size: var(--font-size-sm);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .song-artist {
+            font-size: var(--font-size-xs);
+            color: var(--color-text-secondary);
+        }
+        .song-meta {
+            font-size: var(--font-size-xs);
+            color: var(--color-text-tertiary);
+            display: flex;
+            gap: var(--space-3);
+            margin-top: var(--space-1);
+        }
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px var(--space-2);
+            border-radius: var(--radius-sm);
+            font-size: var(--font-size-xs);
+            font-weight: var(--font-weight-medium);
+        }
+        .badge-accepted {
+            background: var(--color-success-bg);
+            color: var(--color-success);
+            border: 1px solid var(--color-success-border);
+        }
+        .badge-output {
+            background: var(--color-warning-bg);
+            color: var(--color-warning);
+            border: 1px solid var(--color-warning-border);
+        }
+        .song-actions { display: flex; gap: var(--space-2); flex-shrink: 0; }
+        .empty-state {
+            text-align: center;
+            padding: var(--space-6);
+            color: var(--color-text-tertiary);
+        }
+        .status-bar {
+            padding: var(--space-3) var(--space-5);
+            background: var(--color-surface);
+            border-bottom: 1px solid var(--color-border);
+            font-size: var(--font-size-sm);
+            color: var(--color-text-secondary);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .loading { text-align: center; padding: var(--space-6); color: var(--color-text-tertiary); }
+    </style>
+</head>
+<body>
+    <div class="page-wrapper">
+        <div class="page-header">
+            <h1>🎵 Admin Dashboard</h1>
+            <div class="header-right">
+                <a href="upload" class="btn btn-primary">➕ Upload Song</a>
+                <a href="logout" class="btn btn-ghost">🚪 Logout</a>
+            </div>
+        </div>
+        <div class="status-bar">
+            <span id="songCount">Loading songs...</span>
+            <button class="btn btn-ghost btn-sm" onclick="loadSongs()">🔄 Refresh</button>
+        </div>
+        <div class="container">
+            <div id="songList" class="song-list">
+                <div class="loading">Loading songs...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function loadSongs() {
+            const list = document.getElementById('songList');
+            const count = document.getElementById('songCount');
+            list.innerHTML = '<div class="loading">Loading songs...</div>';
+
+            try {
+                const resp = await fetch('songs');
+                if (!resp.ok) {
+                    if (resp.status === 401) {
+                        window.location.href = 'login';
+                        return;
+                    }
+                    throw new Error('Failed to load songs');
+                }
+                const songs = await resp.json();
+                count.textContent = `${songs.length} song${songs.length !== 1 ? 's' : ''}`;
+
+                if (songs.length === 0) {
+                    list.innerHTML = '<div class="empty-state">No songs yet. <a href="upload">Upload your first song</a></div>';
+                    return;
+                }
+
+                list.innerHTML = songs.map(song => `
+                    <div class="song-card">
+                        <div class="song-info">
+                            <div class="song-name">${escapeHtml(song.song_name)}</div>
+                            <div class="song-artist">${escapeHtml(song.artist)}</div>
+                            <div class="song-meta">
+                                <span>${formatDate(song.created_at)}</span>
+                                <span>${formatSize(song.file_size_bytes)}</span>
+                                <span class="badge ${song.accepted ? 'badge-accepted' : 'badge-output'}">
+                                    ${song.accepted ? '✓ Accepted' : '○ Output'}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="song-actions">
+                            <a href="edit/${encodeURIComponent(song.filename)}" class="btn btn-ghost btn-sm" title="Edit">✏️</a>
+                            ${song.accepted
+                                ? `<button class="btn btn-ghost btn-sm" onclick="moveSong('${escapeHtml(song.filename)}', 'output')" title="Move to output">↩️</button>`
+                                : `<button class="btn btn-ghost btn-sm" onclick="moveSong('${escapeHtml(song.filename)}', 'accepted')" title="Move to accepted">✅</button>`
+                            }
+                            <button class="btn btn-danger btn-sm" onclick="deleteSong('${escapeHtml(song.filename)}')" title="Delete">🗑️</button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (err) {
+                list.innerHTML = `<div class="empty-state">Error: ${escapeHtml(err.message)}</div>`;
+            }
+        }
+
+        async function moveSong(filename, target) {
+            if (!confirm(`Move song to ${target}?`)) return;
+            try {
+                const resp = await fetch(`song/${encodeURIComponent(filename)}/move`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ target })
+                });
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    alert(err.error || 'Failed to move song');
+                    return;
+                }
+                loadSongs();
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        }
+
+        async function deleteSong(filename) {
+            if (!confirm('Delete this song? This cannot be undone.')) return;
+            try {
+                const resp = await fetch(`song/${encodeURIComponent(filename)}`, {
+                    method: 'DELETE'
+                });
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    alert(err.error || 'Failed to delete song');
+                    return;
+                }
+                loadSongs();
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        function formatDate(dateStr) {
+            const d = new Date(dateStr);
+            return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function formatSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        loadSongs();
+    </script>
+</body>
+</html>

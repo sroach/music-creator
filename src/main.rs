@@ -1,3 +1,4 @@
+mod admin;
 mod convert;
 mod lyrics_gen;
 mod thumbnail_client;
@@ -51,6 +52,14 @@ struct CliArgs {
     /// Accepted songs directory (defaults to "accepted")
     #[arg(long, default_value = "accepted")]
     accepted_dir: String,
+
+    /// Use local AceStep API instead of cloud API
+    #[arg(long)]
+    local_api: bool,
+
+    /// Local API base URL (used when --local-api is set)
+    #[arg(long, default_value = "http://localhost:8001")]
+    local_api_url: String,
 }
 
 impl std::fmt::Debug for CliArgs {
@@ -60,11 +69,89 @@ impl std::fmt::Debug for CliArgs {
             .field("port", &self.port)
             .field("output_dir", &self.output_dir)
             .field("accepted_dir", &self.accepted_dir)
+            .field("local_api", &self.local_api)
+            .field("local_api_url", &self.local_api_url)
             .finish()
     }
 }
 
 const BASE_URL: &str = "https://api.acemusic.ai";
+
+/// Local AceStep API - Release Task request payload
+#[derive(Debug, Serialize)]
+struct LocalReleaseTaskRequest {
+    prompt: String,
+    lyrics: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    model: Option<String>,
+    #[serde(default)]
+    thinking: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    inference_steps: Option<u32>,
+    #[serde(default)]
+    batch_size: u32,
+}
+
+/// Local AceStep API - Release Task response
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct LocalReleaseTaskResponse {
+    #[serde(default)]
+    data: Option<LocalTaskData>,
+    #[serde(default)]
+    code: i32,
+    #[serde(default)]
+    error: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct LocalTaskData {
+    #[serde(alias = "task_id")]
+    id: Option<String>,
+    #[serde(default)]
+    status: Option<i32>,
+}
+
+/// Local AceStep API - Query Result request payload
+#[derive(Debug, Serialize)]
+struct LocalQueryResultRequest {
+    task_id_list: Vec<String>,
+}
+
+/// Local AceStep API - Query Result response
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct LocalQueryResultResponse {
+    #[serde(default)]
+    data: Option<LocalQueryResultData>,
+    #[serde(default)]
+    code: i32,
+    #[serde(default)]
+    error: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct LocalQueryResultData {
+    result: Option<String>,
+}
+
+/// Parsed result from query_result
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct LocalTaskResult {
+    #[serde(default)]
+    status: i32,
+    #[serde(default)]
+    file: String,
+    #[serde(default)]
+    prompt: String,
+    #[serde(default)]
+    lyrics: String,
+    #[serde(default)]
+    metas: serde_json::Value,
+}
 
 /// Request payload from the frontend form
 #[derive(Debug, Deserialize)]
@@ -176,8 +263,8 @@ fn parse_lyrics_output(full_text: &str) -> (Option<LyricsMetadata>, String) {
 }
 
 /// Single song entry for the list endpoint
-#[derive(Debug, Serialize)]
-struct SongEntry {
+#[derive(Debug, Serialize, Clone)]
+pub struct SongEntry {
     filename: String,
     song_name: String,
     artist: String,
@@ -247,6 +334,12 @@ struct AppState {
     /// Public base URL for external access (e.g., "https://roach.gy/music-creator").
     /// Used as the fallback for playlist URLs when no `base_url` query param is provided.
     public_url: String,
+    /// Use local AceStep API instead of cloud API
+    local_api: bool,
+    /// Local API base URL (e.g., "http://localhost:8001")
+    local_api_url: String,
+    /// Admin state for passkey auth and song management
+    admin: admin::AdminState,
 }
 
 // Embed static files at compile time so deployment only needs the binary
@@ -272,7 +365,7 @@ async fn favicon() -> impl axum::response::IntoResponse {
 }
 
 /// SSE handler for song generation endpoint.
-/// Streams progress events while the ACEMusic API generates the song.
+/// Streams progress events while the API generates the song.
 async fn generate(
     state: axum::extract::State<Arc<AppState>>,
     Json(req): Json<GenerateRequest>,
@@ -290,6 +383,21 @@ async fn generate(
             error: "Style prompt is required".to_string(),
         })).into_response();
     }
+
+    // Branch based on API mode
+    if state.local_api {
+        generate_local(state, req)
+    } else {
+        generate_cloud(state, req)
+    }
+}
+
+/// Cloud API generation (ACEMusic cloud)
+fn generate_cloud(
+    state: axum::extract::State<Arc<AppState>>,
+    req: GenerateRequest,
+) -> Response {
+    use axum::http::StatusCode;
 
     // Check API key
     let api_key = match &state.api_key {
@@ -336,7 +444,7 @@ async fn generate(
     // Log the request
     let lyrics_preview: String = req.lyrics.chars().take(100).collect();
     println!("\n============================================================");
-    println!("📤 SENDING PAYLOAD TO API");
+    println!("📤 SENDING PAYLOAD TO CLOUD API");
     println!("============================================================");
     println!("Model: {}", payload.model);
     println!("Prompt (style tags): {}", payload.prompt);
@@ -672,6 +780,509 @@ async fn generate(
         .into_response()
 }
 
+/// Local AceStep API generation
+fn generate_local(
+    state: axum::extract::State<Arc<AppState>>,
+    req: GenerateRequest,
+) -> Response {
+    use axum::http::StatusCode;
+
+    let local_api_url = state.local_api_url.clone();
+    let output_dir = state.output_dir.clone();
+    let accepted_dir = state.accepted_dir.clone();
+    let song_name = req.song_name.clone();
+    let artist = req.artist.clone();
+    let prompt = req.prompt.clone();
+    let lyrics = req.lyrics.clone();
+    let duration = req.duration;
+    let bpm = req.bpm;
+
+    let lyrics_preview: String = lyrics.chars().take(100).collect();
+    println!("\n============================================================");
+    println!("📤 SENDING PAYLOAD TO LOCAL API");
+    println!("============================================================");
+    println!("Prompt (style tags): {}", prompt);
+    println!("Lyrics (first 100 chars): {}...", lyrics_preview);
+    println!("Duration: {}, BPM: {}", duration, bpm);
+    println!("URL: {}", local_api_url);
+    println!("============================================================\n");
+
+    let (tx, rx) = tokio::sync::mpsc::channel::<String>(32);
+
+    tokio::spawn(async move {
+        // Send started event
+        let started_json = serde_json::json!({"message": "Connecting to local AceStep API..."});
+        let escaped_json = started_json.to_string()
+            .replace("\\", "\\\\")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r");
+        let started_event = format!("event: started\ndata: {}\n\n", escaped_json);
+        if tx.send(started_event).await.is_err() {
+            return;
+        }
+
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(600))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+
+        // Step 1: Submit task via /release_task
+        let release_url = format!("{}/release_task", local_api_url);
+        let release_payload = LocalReleaseTaskRequest {
+            prompt: prompt.clone(),
+            lyrics: lyrics.clone(),
+            model: Some("acestep-v15-turbo".to_string()),
+            thinking: true,
+            inference_steps: None,
+            batch_size: 1,
+        };
+
+        let release_response = match client
+            .post(&release_url)
+            .header("Content-Type", "application/json")
+            .json(&release_payload)
+            .send()
+            .await
+        {
+            Ok(resp) => resp,
+            Err(e) => {
+                let error_json = serde_json::json!({"error": format!("Failed to connect to local API: {}", e)});
+                let escaped_json = error_json.to_string()
+                    .replace("\\", "\\\\")
+                    .replace("\n", "\\n")
+                    .replace("\r", "\\r");
+                let error_event = format!("event: error\ndata: {}\n\n", escaped_json);
+                let _ = tx.send(error_event).await;
+                return;
+            }
+        };
+
+        let status = release_response.status();
+        if status.as_u16() != 200 {
+            let error_json = serde_json::json!({"error": format!("Local API error: {}", status.as_u16())});
+            let escaped_json = error_json.to_string()
+                .replace("\\", "\\\\")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r");
+            let error_event = format!("event: error\ndata: {}\n\n", escaped_json);
+            let _ = tx.send(error_event).await;
+            return;
+        }
+
+        let release_body = match release_response.text().await {
+            Ok(t) => t,
+            Err(e) => {
+                let error_json = serde_json::json!({"error": format!("Failed to read release response: {}", e)});
+                let escaped_json = error_json.to_string()
+                    .replace("\\", "\\\\")
+                    .replace("\n", "\\n")
+                    .replace("\r", "\\r");
+                let error_event = format!("event: error\ndata: {}\n\n", escaped_json);
+                let _ = tx.send(error_event).await;
+                return;
+            }
+        };
+
+        println!("📥 Release task response: {}", release_body);
+
+        // Parse the response - try both formats
+        let task_id: Option<String> = {
+            // Try standard format first: {"data": {"task_id": "..."}}
+            if let Ok(resp) = serde_json::from_str::<LocalReleaseTaskResponse>(&release_body) {
+                if let Some(data) = resp.data {
+                    if let Some(id) = data.id {
+                        Some(id)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                // Try raw JSON parsing for alternative formats
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&release_body) {
+                    // Try data.task_id
+                    if let Some(id) = val.get("data").and_then(|d| d.get("task_id")).and_then(|i| i.as_str()) {
+                        Some(id.to_string())
+                    }
+                    // Try data.id
+                    else if let Some(id) = val.get("data").and_then(|d| d.get("id")).and_then(|i| i.as_str()) {
+                        Some(id.to_string())
+                    }
+                    // Try top-level task_id
+                    else if let Some(id) = val.get("task_id").and_then(|i| i.as_str()) {
+                        Some(id.to_string())
+                    }
+                    // Try top-level id
+                    else if let Some(id) = val.get("id").and_then(|i| i.as_str()) {
+                        Some(id.to_string())
+                    }
+                    else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+        };
+
+        let task_id = match task_id {
+            Some(id) => id,
+            None => {
+                let error_json = serde_json::json!({"error": format!("No task_id in response: {}", release_body)});
+                let escaped_json = error_json.to_string()
+                    .replace("\\", "\\\\")
+                    .replace("\n", "\\n")
+                    .replace("\r", "\\r");
+                let error_event = format!("event: error\ndata: {}\n\n", escaped_json);
+                let _ = tx.send(error_event).await;
+                return;
+            }
+        };
+
+        println!("✅ Task submitted: {}", task_id);
+
+        // Send generating event
+        let generating_json = serde_json::json!({"message": "Generating audio..."});
+        let escaped_json = generating_json.to_string()
+            .replace("\\", "\\\\")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r");
+        let generating_event = format!("event: generating\ndata: {}\n\n", escaped_json);
+        if tx.send(generating_event).await.is_err() {
+            return;
+        }
+
+        // Step 2: Poll /query_result until task is complete
+        let query_url = format!("{}/query_result", local_api_url);
+        let mut audio_file_path = String::new();
+        let max_attempts = 300; // 5 minutes at 1s intervals
+        let mut attempts = 0;
+
+        loop {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            attempts += 1;
+
+            if attempts % 10 == 0 {
+                let progress_json = serde_json::json!({
+                    "chunk": attempts,
+                    "percentage": ((attempts as f32 / max_attempts as f32) * 95.0).min(95.0) as u32,
+                    "message": format!("Waiting for generation... (attempt {}/{})", attempts, max_attempts)
+                });
+                let escaped_json = progress_json.to_string()
+                    .replace("\\", "\\\\")
+                    .replace("\n", "\\n")
+                    .replace("\r", "\\r");
+                let progress_event = format!("event: progress\ndata: {}\n\n", escaped_json);
+                let _ = tx.send(progress_event).await;
+            }
+
+            if attempts > max_attempts {
+                let error_json = serde_json::json!({"error": "Generation timed out after 5 minutes"});
+                let escaped_json = error_json.to_string()
+                    .replace("\\", "\\\\")
+                    .replace("\n", "\\n")
+                    .replace("\r", "\\r");
+                let error_event = format!("event: error\ndata: {}\n\n", escaped_json);
+                let _ = tx.send(error_event).await;
+                return;
+            }
+
+            let query_payload = LocalQueryResultRequest {
+                task_id_list: vec![task_id.clone()],
+            };
+
+            let query_response = match client
+                .post(&query_url)
+                .header("Content-Type", "application/json")
+                .json(&query_payload)
+                .send()
+                .await
+            {
+                Ok(resp) => resp,
+                Err(e) => {
+                    eprintln!("⚠️  Query failed, retrying: {}", e);
+                    continue;
+                }
+            };
+
+            let query_body = match query_response.text().await {
+                Ok(t) => t,
+                Err(e) => {
+                    eprintln!("⚠️  Failed to read query response: {}", e);
+                    continue;
+                }
+            };
+
+            // Parse result from response
+            // Format: {"data": [{"task_id": "...", "result": "json string", "status": 0/1/2, ...}]}
+            println!("📥 Query result response (attempt {}): {}", attempts, query_body);
+
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&query_body) {
+                // data is a list of task results
+                let data_arr = val.get("data").and_then(|d| d.as_array());
+                
+                if let Some(data_arr) = data_arr {
+                    for task_result in data_arr {
+                        let task_status = task_result.get("status").and_then(|s| s.as_i64()).unwrap_or(0);
+                        let result_str = task_result.get("result").and_then(|r| r.as_str());
+                        
+                        println!("📋 Task status: {}, result: {:?}", task_status, result_str);
+                        
+                        if let Some(result_json_str) = result_str {
+                            // Parse the result JSON string (contains file info)
+                            if let Ok(results) = serde_json::from_str::<serde_json::Value>(result_json_str) {
+                                println!("📋 Parsed result: {}", results);
+                                if let Some(arr) = results.as_array() {
+                                    for item in arr {
+                                        let status = item.get("status").and_then(|s| s.as_i64()).unwrap_or(0);
+                                        println!("📋 Item status: {}, file: {:?}", status, item.get("file"));
+                                        if status == 1 {
+                                            // Success!
+                                            if let Some(file) = item.get("file").and_then(|f| f.as_str()) {
+                                                audio_file_path = file.to_string();
+                                                break;
+                                            }
+                                        } else if status == 2 {
+                                            // Failed
+                                            let error_msg = item.get("error").and_then(|e| e.as_str()).unwrap_or("Unknown error");
+                                            let error_json = serde_json::json!({"error": format!("Generation failed: {}", error_msg)});
+                                            let escaped_json = error_json.to_string()
+                                                .replace("\\", "\\\\")
+                                                .replace("\n", "\\n")
+                                                .replace("\r", "\\r");
+                                            let error_event = format!("event: error\ndata: {}\n\n", escaped_json);
+                                            let _ = tx.send(error_event).await;
+                                            return;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Also check the top-level status for failure
+                        if task_status == 2 {
+                            let error_msg = task_result.get("progress_text").and_then(|e| e.as_str()).unwrap_or("Unknown error");
+                            let error_json = serde_json::json!({"error": format!("Generation failed: {}", error_msg)});
+                            let escaped_json = error_json.to_string()
+                                .replace("\\", "\\\\")
+                                .replace("\n", "\\n")
+                                .replace("\r", "\\r");
+                            let error_event = format!("event: error\ndata: {}\n\n", escaped_json);
+                            let _ = tx.send(error_event).await;
+                            return;
+                        }
+                    }
+                }
+            }
+
+            if !audio_file_path.is_empty() {
+                break;
+            }
+        }
+
+        if audio_file_path.is_empty() {
+            let error_json = serde_json::json!({"error": "No audio file path returned"});
+            let escaped_json = error_json.to_string()
+                .replace("\\", "\\\\")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r");
+            let error_event = format!("event: error\ndata: {}\n\n", escaped_json);
+            let _ = tx.send(error_event).await;
+            return;
+        }
+
+        println!("✅ Audio file path: {}", audio_file_path);
+
+        // Step 3: Download audio
+        // The `file` field may be a relative URL (/v1/audio?path=...) or a raw file path
+        let audio_url = if audio_file_path.starts_with("/v1/audio") {
+            format!("{}{}", local_api_url, audio_file_path)
+        } else if audio_file_path.starts_with("http") {
+            audio_file_path.clone()
+        } else {
+            format!("{}/v1/audio?path={}", local_api_url, url_encode(&audio_file_path))
+        };
+        
+        let download_response = match client.get(&audio_url).send().await {
+            Ok(resp) => resp,
+            Err(e) => {
+                let error_json = serde_json::json!({"error": format!("Failed to download audio: {}", e)});
+                let escaped_json = error_json.to_string()
+                    .replace("\\", "\\\\")
+                    .replace("\n", "\\n")
+                    .replace("\r", "\\r");
+                let error_event = format!("event: error\ndata: {}\n\n", escaped_json);
+                let _ = tx.send(error_event).await;
+                return;
+            }
+        };
+
+        let download_status = download_response.status();
+        if download_status.as_u16() != 200 {
+            let error_json = serde_json::json!({"error": format!("Download failed with status: {}", download_status.as_u16())});
+            let escaped_json = error_json.to_string()
+                .replace("\\", "\\\\")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r");
+            let error_event = format!("event: error\ndata: {}\n\n", escaped_json);
+            let _ = tx.send(error_event).await;
+            return;
+        }
+
+        let audio_bytes = match download_response.bytes().await {
+            Ok(b) => b.to_vec(),
+            Err(e) => {
+                let error_json = serde_json::json!({"error": format!("Failed to read audio data: {}", e)});
+                let escaped_json = error_json.to_string()
+                    .replace("\\", "\\\\")
+                    .replace("\n", "\\n")
+                    .replace("\r", "\\r");
+                let error_event = format!("event: error\ndata: {}\n\n", escaped_json);
+                let _ = tx.send(error_event).await;
+                return;
+            }
+        };
+
+        println!("✅ Downloaded {} bytes of audio", audio_bytes.len());
+
+        // Sanitize filename
+        let safe_name: String = song_name
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || c == '_' || c == '-' || c == ' ' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        let safe_name = safe_name.trim().to_string();
+        let safe_name = if safe_name.is_empty() {
+            "generated_song".to_string()
+        } else {
+            safe_name.replace(' ', "_")
+        };
+        let filename = format!("{}.mp3", safe_name);
+
+        // Check if this song already exists in the accepted directory
+        let accepted_mp3_path = PathBuf::from(&accepted_dir).join(&filename);
+        if accepted_mp3_path.exists() {
+            let error_json = serde_json::json!({"error": format!("A song with the name \"{}\" has already been accepted and cannot be overwritten.", song_name)});
+            let escaped_json = error_json.to_string()
+                .replace("\\", "\\\\")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r");
+            let error_event = format!("event: error\ndata: {}\n\n", escaped_json);
+            let _ = tx.send(error_event).await;
+            return;
+        }
+
+        // Ensure output directory exists
+        fs::create_dir_all(&output_dir).unwrap_or_else(|_| ());
+
+        // Save the MP3 file
+        let filepath = PathBuf::from(&output_dir).join(&filename);
+        if let Err(e) = fs::write(&filepath, &audio_bytes) {
+            let error_json = serde_json::json!({"error": format!("Failed to save file: {}", e)});
+            let escaped_json = error_json.to_string()
+                .replace("\\", "\\\\")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r");
+            let error_event = format!("event: error\ndata: {}\n\n", escaped_json);
+            let _ = tx.send(error_event).await;
+            return;
+        }
+
+        // Embed ID3 tags
+        if let Err(e) = embed_id3_tags(
+            &filepath,
+            &song_name,
+            &artist,
+            &prompt,
+            &lyrics,
+        ) {
+            eprintln!("⚠️  Warning: Failed to embed ID3 tags: {}", e);
+        } else {
+            println!("🏷️  ID3 tags embedded in {}", filename);
+        }
+
+        // Save metadata JSON
+        let metadata = SongMetadata {
+            song_name,
+            artist,
+            prompt,
+            lyrics,
+            duration,
+            bpm,
+            model: "acestep-v15-turbo".to_string(),
+            filename: filename.clone(),
+            created_at: Utc::now().to_rfc3339(),
+            file_size_bytes: audio_bytes.len(),
+        };
+
+        let metadata_path = PathBuf::from(&output_dir).join(format!("{}.json", safe_name));
+        if let Err(e) = fs::write(
+            &metadata_path,
+            serde_json::to_string_pretty(&metadata).unwrap_or_default(),
+        ) {
+            eprintln!("⚠️  Warning: Failed to save metadata: {}", e);
+        }
+
+        // Sync the m3u playlist with the new song
+        sync_m3u_playlist(&PathBuf::from(&output_dir));
+
+        // Send done event
+        let done_json = serde_json::json!({
+            "message": "Song generated successfully",
+            "filename": filename,
+            "size": audio_bytes.len()
+        });
+        let escaped_json = done_json.to_string()
+            .replace("\\", "\\\\")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r");
+        let done_event = format!("event: done\ndata: {}\n\n", escaped_json);
+        let _ = tx.send(done_event).await;
+    });
+
+    // Build the SSE response body from the channel receiver
+    use tokio_stream::wrappers::ReceiverStream;
+    use tokio_stream::StreamExt;
+    let receiver_stream = ReceiverStream::new(rx);
+    let body = axum::body::Body::from_stream(receiver_stream.map(|msg| {
+        Ok::<_, std::convert::Infallible>(msg)
+    }));
+
+    (
+        StatusCode::OK,
+        [
+            ("Content-Type", "text/event-stream"),
+            ("Cache-Control", "no-cache"),
+            ("Connection", "keep-alive"),
+            ("X-Accel-Buffering", "no"),
+        ],
+        body,
+    )
+        .into_response()
+}
+
+/// Simple URL encoder for file paths
+fn url_encode(path: &str) -> String {
+    let mut encoded = String::new();
+    for b in path.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => {
+                encoded.push(b as char);
+            }
+            _ => {
+                encoded.push_str(&format!("%{:02X}", b));
+            }
+        }
+    }
+    encoded
+}
+
 
 /// Recursively extract audio data from a JSON value
 fn extract_audio_from_value(value: &serde_json::Value, chunks: &mut Vec<String>) {
@@ -955,7 +1566,7 @@ async fn get_accepted_playlist(
 /// Sync the m3u playlist file with all MP3 files in the output directory.
 /// Generates a simple m3u format (one absolute path per line) for Liquidsoap compatibility.
 /// No #EXTM3U header or #EXTINF metadata lines — just raw paths.
-fn sync_m3u_playlist(output_dir: &PathBuf) {
+pub fn sync_m3u_playlist(output_dir: &PathBuf) {
     let m3u_path = output_dir.join("playlist.m3u");
 
     // Get the absolute path of the output directory
@@ -1143,7 +1754,7 @@ async fn download_file(
 }
 
 /// Helper: scan a directory for song metadata and build SongEntry items
-fn scan_songs_in_dir(dir: &PathBuf, accepted: bool) -> Vec<SongEntry> {
+pub fn scan_songs_in_dir(dir: &PathBuf, accepted: bool) -> Vec<SongEntry> {
     let mut songs = Vec::new();
 
     if !dir.exists() {
@@ -1773,6 +2384,14 @@ async fn main() -> Result<()> {
         .api_key
         .or_else(|| std::env::var("ACESTEP_API_KEY").ok());
 
+    // Local API mode: CLI flag > env var
+    let local_api = cli.local_api || std::env::var("LOCAL_API").map(|v| v == "1" || v.to_lowercase() == "true").unwrap_or(false);
+    let local_api_url = if local_api {
+        std::env::var("LOCAL_API_URL").unwrap_or_else(|_| cli.local_api_url.clone())
+    } else {
+        cli.local_api_url.clone()
+    };
+
     // Port priority: CLI arg > env var > .env file > default
     let port = cli.port;
 
@@ -1806,12 +2425,21 @@ async fn main() -> Result<()> {
         format!("http://localhost:{}", port)
     });
 
+    // Admin RP-ID: domain for WebAuthn passkey authentication
+    // Defaults to localhost for development; set via ADMIN_RP_ID env var for production
+    let admin_rp_id = std::env::var("ADMIN_RP_ID").unwrap_or_else(|_| "localhost".to_string());
+    let admin_json_path = project_root.join("admin.json");
+    let admin_state = admin::AdminState::new(admin_rp_id, port, admin_json_path);
+
     let state = Arc::new(AppState {
         api_key,
         output_dir: output_dir_path.display().to_string(),
         accepted_dir: accepted_dir_path.display().to_string(),
         thumbnail_client: thumbnail_client::ThumbnailClient::new(),
         public_url,
+        local_api,
+        local_api_url: local_api_url.clone(),
+        admin: admin_state,
     });
 
     // Initialize the m3u playlist on startup if output directory has songs
@@ -1820,6 +2448,11 @@ async fn main() -> Result<()> {
     println!("🎵 Music Creator starting on http://localhost:{}", port);
     println!("📁 Output directory: {}", state.output_dir);
     println!("📁 Accepted directory: {}", state.accepted_dir);
+    if state.local_api {
+        println!("🔌 Using local AceStep API: {}", local_api_url);
+    } else {
+        println!("☁️  Using ACEMusic cloud API");
+    }
 
     // Log Foundation Models availability
     if lyrics_gen::is_available() {
@@ -1829,6 +2462,7 @@ async fn main() -> Result<()> {
         println!("   Lyrics generation will not work. Enable Apple Intelligence in System Settings.");
     }
 
+    use axum::routing::put;
     // Build the router with all API routes
     let app = Router::new()
         .route("/", get(index))
@@ -1845,6 +2479,21 @@ async fn main() -> Result<()> {
         .route("/playlist-mp4.m3u", get(get_mp4_playlist))
         .route("/playlist-accepted.m3u", get(get_accepted_playlist))
         .route("/static/favicon.svg", get(favicon))
+        // Admin routes
+        .route("/admin/login", get(admin::admin_login_page))
+        .route("/admin/register", get(admin::admin_register_page))
+        .route("/admin/dashboard", get(admin::admin_dashboard_page))
+        .route("/admin/upload", get(admin::admin_upload_page))
+        .route("/admin/edit/{filename}", get(admin::admin_edit_page))
+        .route("/admin/register/start", post(admin::register_start))
+        .route("/admin/register/finish", post(admin::register_finish))
+        .route("/admin/login/start", post(admin::login_start))
+        .route("/admin/login/finish", post(admin::login_finish))
+        .route("/admin/logout", get(admin::logout))
+        .route("/admin/songs", get(admin::list_songs))
+        .route("/admin/upload", post(admin::upload_song))
+        .route("/admin/song/{filename}", put(admin::update_song).delete(admin::delete_song))
+        .route("/admin/song/{filename}/move", post(admin::move_song))
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)

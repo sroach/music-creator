@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <title>Admin Login - Music Creator</title>
+    <style>
+        :root {
+            --color-primary: #3B82F6;
+            --color-primary-hover: #2563EB;
+            --color-danger: #DC2626;
+            --color-danger-bg: #FEF2F2;
+            --color-danger-border: #FECACA;
+            --color-surface: #FFFFFF;
+            --color-surface-secondary: #F9FAFB;
+            --color-text: #111827;
+            --color-text-secondary: #4B5563;
+            --color-text-tertiary: #6B7280;
+            --color-border: #E5E7EB;
+            --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            --font-size-xs: 12px;
+            --font-size-sm: 14px;
+            --font-size-base: 16px;
+            --font-size-lg: 24px;
+            --font-weight-normal: 400;
+            --font-weight-medium: 500;
+            --font-weight-semibold: 600;
+            --font-weight-bold: 700;
+            --space-1: 4px;
+            --space-2: 8px;
+            --space-3: 12px;
+            --space-4: 16px;
+            --space-5: 24px;
+            --space-6: 32px;
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+        }
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: var(--font-family);
+            font-size: var(--font-size-base);
+            color: var(--color-text);
+            background-color: var(--color-surface-secondary);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1.5;
+        }
+        .login-card {
+            background: var(--color-surface);
+            border-radius: var(--radius-md);
+            box-shadow: var(--shadow-md);
+            padding: var(--space-6);
+            width: 100%;
+            max-width: 400px;
+            margin: var(--space-4);
+        }
+        .login-card h1 {
+            font-size: var(--font-size-lg);
+            font-weight: var(--font-weight-bold);
+            text-align: center;
+            margin-bottom: var(--space-2);
+        }
+        .login-card .subtitle {
+            font-size: var(--font-size-sm);
+            color: var(--color-text-secondary);
+            text-align: center;
+            margin-bottom: var(--space-5);
+        }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: var(--space-2);
+            width: 100%;
+            padding: var(--space-3) var(--space-4);
+            font-family: var(--font-family);
+            font-size: var(--font-size-sm);
+            font-weight: var(--font-weight-medium);
+            border: none;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: background-color 0.15s;
+        }
+        .btn-primary {
+            background: var(--color-primary);
+            color: white;
+        }
+        .btn-primary:hover { background: var(--color-primary-hover); }
+        .btn-primary:disabled {
+            background: var(--color-border);
+            cursor: not-allowed;
+        }
+        .error-message {
+            background: var(--color-danger-bg);
+            border: 1px solid var(--color-danger-border);
+            color: var(--color-danger);
+            padding: var(--space-3);
+            border-radius: var(--radius-sm);
+            font-size: var(--font-size-sm);
+            margin-bottom: var(--space-4);
+            text-align: center;
+        }
+        .link {
+            text-align: center;
+            margin-top: var(--space-4);
+            font-size: var(--font-size-sm);
+            color: var(--color-text-secondary);
+        }
+        .link a {
+            color: var(--color-primary);
+            text-decoration: none;
+        }
+        .link a:hover { text-decoration: underline; }
+        .status {
+            text-align: center;
+            font-size: var(--font-size-sm);
+            color: var(--color-text-tertiary);
+            margin-top: var(--space-3);
+            min-height: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <h1>🔐 Admin Login</h1>
+        <p class="subtitle">Use your device passkey to sign in</p>
+        <!-- ERROR -->
+        <button id="loginBtn" class="btn btn-primary" onclick="login()">
+            Sign in with Passkey
+        </button>
+        <p id="status" class="status"></p>
+        <p class="link">
+            First time here? <a href="register">Register a passkey</a>
+        </p>
+    </div>
+
+    <script>
+        async function login() {
+            const btn = document.getElementById('loginBtn');
+            const status = document.getElementById('status');
+            btn.disabled = true;
+            status.textContent = 'Preparing login...';
+
+            try {
+                // Get RP ID from the current origin
+                const rpId = window.location.hostname;
+
+                // Start authentication
+                const startResp = await fetch('login/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_handle: '' })
+                });
+
+                if (!startResp.ok) {
+                    const err = await startResp.json();
+                    throw new Error(err.error || 'Login failed');
+                }
+
+                const result = await startResp.json();
+                const challengeId = result.challenge_id;
+                const options = result.options;
+
+                // Convert base64 challenge
+                options.challenge = urlBase64ToBuffer(options.challenge);
+                if (options.allowCredentials) {
+                    options.allowCredentials = options.allowCredentials.map(cred => ({
+                        ...cred,
+                        id: urlBase64ToBuffer(cred.id)
+                    }));
+                }
+
+                // Prompt for passkey
+                status.textContent = 'Please verify with Touch ID, Face ID, or your device...';
+                const credential = await navigator.credentials.get({
+                    publicKey: options
+                });
+
+                // Build response
+                const resp = credential.response;
+                const finishResp = await fetch('login/finish', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        challenge_id: challengeId,
+                        id: bufferToUrlBase64(credentialsBuffer(credential.rawId)),
+                        authenticatorData: bufferToUrlBase64(credentialsBuffer(resp.authenticatorData)),
+                        signature: bufferToUrlBase64(credentialsBuffer(resp.signature)),
+                        clientDataJSON: bufferToUrlBase64(credentialsBuffer(resp.clientDataJSON)),
+                        userHandle: resp.userHandle ? bufferToUrlBase64(credentialsBuffer(resp.userHandle)) : null
+                    })
+                });
+
+                if (!finishResp.ok) {
+                    const err = await finishResp.json();
+                    throw new Error(err.error || 'Authentication failed');
+                }
+
+                const finishResult = await finishResp.json();
+                status.textContent = 'Login successful! Redirecting...';
+                window.location.href = finishResult.redirect || 'dashboard';
+
+            } catch (err) {
+                status.textContent = 'Error: ' + err.message;
+                btn.disabled = false;
+            }
+        }
+
+        function credentialsBuffer(source) {
+            if (source instanceof ArrayBuffer) return source;
+            if (source instanceof Uint8Array) return source.buffer;
+            return new Uint8Array(source).buffer;
+        }
+
+        function bufferToUrlBase64(buffer) {
+            const bytes = new Uint8Array(buffer);
+            let str = '';
+            for (const charCode of bytes) {
+                str += String.fromCharCode(charCode);
+            }
+            return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+        }
+
+        function urlBase64ToBuffer(base64string) {
+            const str = atob(base64string.replace(/-/g, '+').replace(/_/g, '/'));
+            const bytes = new Uint8Array(str.length);
+            for (let i = 0; i < str.length; i++) {
+                bytes[i] = str.charCodeAt(i);
+            }
+            return bytes;
+        }
+    </script>
+</body>
+</html>

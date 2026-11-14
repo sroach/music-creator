@@ -118,3 +118,73 @@ The current preset is `Anima` (Q8_0 quantization) for anime-style artistic album
 | `id3` | MP3 metadata (ID3 tags) |
 | `clap` | CLI argument parsing |
 | `dotenvy` | `.env` file support |
+| `passkey-auth` | WebAuthn passkey authentication |
+| `cookie` | Session cookie management |
+| `uuid` | Session ID generation |
+
+## Admin Panel
+
+The app includes a secure admin panel behind `/admin/` for uploading, editing, and managing songs with WebAuthn passkey authentication (Touch ID, Face ID, hardware keys).
+
+### Admin Features
+
+- **Passkey Authentication** — Register your device once, then sign in with Touch ID/Face ID
+- **Song Upload** — Upload MP3 + JSON metadata + optional PNG/MP4 files
+- **Song Edit** — Replace individual files (MP3, PNG, JSON) for existing songs
+- **Song Delete** — Remove songs from output/ or accepted/ directories
+- **Song Move** — Move songs between output/ and accepted/ directories
+
+### Admin Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/admin/login` | Admin login page |
+| `GET` | `/admin/register` | Passkey registration page |
+| `GET` | `/admin/dashboard` | Song management dashboard |
+| `GET` | `/admin/upload` | Upload new song form |
+| `GET` | `/admin/edit/{filename}` | Edit existing song |
+| `POST` | `/admin/register/start` | Start passkey registration |
+| `POST` | `/admin/register/finish` | Complete passkey registration |
+| `POST` | `/admin/login/start` | Start passkey authentication |
+| `POST` | `/admin/login/finish` | Complete passkey authentication |
+| `GET` | `/admin/logout` | Destroy session |
+| `GET` | `/admin/songs` | List all songs (JSON) |
+| `POST` | `/admin/upload` | Upload new song (multipart) |
+| `PUT` | `/admin/song/{filename}` | Update song files (multipart) |
+| `DELETE` | `/admin/song/{filename}` | Delete song |
+| `POST` | `/admin/song/{filename}/move` | Move song between directories |
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `ADMIN_RP_ID` | WebAuthn RP ID (domain) for passkey auth | `localhost` |
+
+### Nginx Configuration
+
+Example nginx configuration for proxying the admin panel with HTTPS:
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name music.example.com;
+
+    ssl_certificate     /path/to/cert.pem;
+    ssl_certificate_key /path/to/key.pem;
+
+    # WebAuthn requires HTTPS (or localhost)
+    location /admin/ {
+        proxy_pass http://127.0.0.1:8001/admin/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        client_max_body_size 100M;  # For large MP3/MP4 uploads
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8001/;
+        proxy_set_header Host $host;
+    }
+}
+```
+
+Set `ADMIN_RP_ID=music.example.com` when running behind nginx so passkeys work correctly.

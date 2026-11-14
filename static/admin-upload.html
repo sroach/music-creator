@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <title>Upload Song - Music Creator</title>
+    <style>
+        :root {
+            --color-primary: #3B82F6;
+            --color-primary-hover: #2563EB;
+            --color-success: #16A34A;
+            --color-success-bg: #F0FDF4;
+            --color-success-border: #BBF7D0;
+            --color-danger: #DC2626;
+            --color-danger-bg: #FEF2F2;
+            --color-danger-border: #FECACA;
+            --color-surface: #FFFFFF;
+            --color-surface-secondary: #F9FAFB;
+            --color-text: #111827;
+            --color-text-secondary: #4B5563;
+            --color-text-tertiary: #6B7280;
+            --color-border: #E5E7EB;
+            --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            --font-size-xs: 12px;
+            --font-size-sm: 14px;
+            --font-size-base: 16px;
+            --font-size-lg: 24px;
+            --font-weight-normal: 400;
+            --font-weight-medium: 500;
+            --font-weight-semibold: 600;
+            --font-weight-bold: 700;
+            --space-1: 4px;
+            --space-2: 8px;
+            --space-3: 12px;
+            --space-4: 16px;
+            --space-5: 24px;
+            --space-6: 32px;
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+        }
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: var(--font-family);
+            font-size: var(--font-size-base);
+            color: var(--color-text);
+            background-color: var(--color-surface-secondary);
+            min-height: 100vh;
+            line-height: 1.5;
+        }
+        .page-header {
+            padding: var(--space-4) var(--space-5);
+            background: var(--color-surface);
+            border-bottom: 1px solid var(--color-border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .page-header h1 {
+            font-size: var(--font-size-lg);
+            font-weight: var(--font-weight-bold);
+            letter-spacing: -0.025em;
+        }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-2);
+            padding: var(--space-2) var(--space-3);
+            font-family: var(--font-family);
+            font-size: var(--font-size-sm);
+            font-weight: var(--font-weight-medium);
+            border: none;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: background-color 0.15s;
+            text-decoration: none;
+        }
+        .btn-primary { background: var(--color-primary); color: white; }
+        .btn-primary:hover { background: var(--color-primary-hover); }
+        .btn-primary:disabled { background: var(--color-border); cursor: not-allowed; }
+        .btn-ghost {
+            background: transparent;
+            color: var(--color-text-secondary);
+            border: 1px solid var(--color-border);
+        }
+        .btn-ghost:hover { background: var(--color-surface-secondary); }
+        .container { max-width: 700px; margin: 0 auto; padding: var(--space-6) var(--space-5); }
+        .form-group { margin-bottom: var(--space-4); }
+        .form-group label {
+            display: block;
+            font-size: var(--font-size-sm);
+            font-weight: var(--font-weight-medium);
+            margin-bottom: var(--space-2);
+        }
+        .form-group input[type="text"],
+        .form-group input[type="number"],
+        .form-group textarea {
+            width: 100%;
+            padding: var(--space-3);
+            font-family: var(--font-family);
+            font-size: var(--font-size-sm);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-sm);
+            outline: none;
+        }
+        .form-group input:focus,
+        .form-group textarea:focus {
+            border-color: var(--color-primary);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        .form-group textarea { min-height: 120px; resize: vertical; }
+        .form-group .hint {
+            font-size: var(--font-size-xs);
+            color: var(--color-text-tertiary);
+            margin-top: var(--space-1);
+        }
+        .file-upload {
+            border: 2px dashed var(--color-border);
+            border-radius: var(--radius-sm);
+            padding: var(--space-5);
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.15s;
+        }
+        .file-upload:hover { border-color: var(--color-primary); }
+        .file-upload input { display: none; }
+        .file-upload .file-name {
+            font-size: var(--font-size-sm);
+            color: var(--color-text-secondary);
+            margin-top: var(--space-2);
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: var(--space-4);
+        }
+        .status {
+            padding: var(--space-3);
+            border-radius: var(--radius-sm);
+            font-size: var(--font-size-sm);
+            margin-bottom: var(--space-4);
+            display: none;
+        }
+        .status.success {
+            display: block;
+            background: var(--color-success-bg);
+            border: 1px solid var(--color-success-border);
+            color: var(--color-success);
+        }
+        .status.error {
+            display: block;
+            background: var(--color-danger-bg);
+            border: 1px solid var(--color-danger-border);
+            color: var(--color-danger);
+        }
+        .section-title {
+            font-size: var(--font-size-sm);
+            font-weight: var(--font-weight-semibold);
+            color: var(--color-text-secondary);
+            margin-bottom: var(--space-3);
+            padding-bottom: var(--space-2);
+            border-bottom: 1px solid var(--color-border);
+        }
+    </style>
+</head>
+<body>
+    <div class="page-header">
+        <h1>➕ Upload Song</h1>
+        <a href="dashboard" class="btn btn-ghost">← Back</a>
+    </div>
+    <div class="container">
+        <div id="status" class="status"></div>
+
+        <form id="uploadForm" onsubmit="upload(event)">
+            <div class="section-title">Required Files</div>
+
+            <div class="form-group">
+                <label>MP3 File *</label>
+                <label class="file-upload" for="mp3File">
+                    <input type="file" id="mp3File" name="mp3" accept=".mp3,audio/mpeg" required onchange="showFileName(this, 'mp3Name')">
+                    <div>📁 Select MP3 file</div>
+                    <div id="mp3Name" class="file-name"></div>
+                </label>
+            </div>
+
+            <div class="section-title">Song Metadata</div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="songName">Song Name</label>
+                    <input type="text" id="songName" name="song_name" placeholder="My Song">
+                </div>
+                <div class="form-group">
+                    <label for="artist">Artist</label>
+                    <input type="text" id="artist" name="artist" placeholder="Artist Name">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="prompt">Style Prompt</label>
+                <input type="text" id="prompt" name="prompt" placeholder="Upbeat pop with electronic elements">
+            </div>
+
+            <div class="form-group">
+                <label for="lyrics">Lyrics</label>
+                <textarea id="lyrics" name="lyrics" placeholder="Song lyrics..."></textarea>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="duration">Duration (seconds)</label>
+                    <input type="number" id="duration" name="duration" value="180" min="30" max="600">
+                </div>
+                <div class="form-group">
+                    <label for="bpm">BPM</label>
+                    <input type="number" id="bpm" name="bpm" value="120" min="60" max="200">
+                </div>
+            </div>
+
+            <div class="section-title">Optional Files</div>
+
+            <div class="form-group">
+                <label>JSON Metadata (optional)</label>
+                <label class="file-upload" for="jsonFile">
+                    <input type="file" id="jsonFile" name="json" accept=".json,application/json" onchange="showFileName(this, 'jsonName')">
+                    <div>📄 Select JSON file (or leave empty to auto-generate)</div>
+                    <div id="jsonName" class="file-name"></div>
+                </label>
+                <p class="hint">If provided, this JSON will be used as-is instead of auto-generating metadata.</p>
+            </div>
+
+            <div class="form-group">
+                <label>PNG Thumbnail (optional)</label>
+                <label class="file-upload" for="pngFile">
+                    <input type="file" id="pngFile" name="png" accept=".png,image/png" onchange="showFileName(this, 'pngName')">
+                    <div>🖼️ Select PNG image</div>
+                    <div id="pngName" class="file-name"></div>
+                </label>
+            </div>
+
+            <div class="form-group">
+                <label>MP4 Video (optional)</label>
+                <label class="file-upload" for="mp4File">
+                    <input type="file" id="mp4File" name="mp4" accept=".mp4,video/mp4" onchange="showFileName(this, 'mp4Name')">
+                    <div>🎬 Select MP4 video</div>
+                    <div id="mp4Name" class="file-name"></div>
+                </label>
+            </div>
+
+            <button type="submit" id="submitBtn" class="btn btn-primary" style="width: 100%; margin-top: var(--space-4);">
+                📤 Upload Song
+            </button>
+        </form>
+    </div>
+
+    <script>
+        function showFileName(input, targetId) {
+            const target = document.getElementById(targetId);
+            if (input.files.length > 0) {
+                target.textContent = input.files[0].name;
+            } else {
+                target.textContent = '';
+            }
+        }
+
+        function showStatus(message, type) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = 'status ' + type;
+        }
+
+        async function upload(event) {
+            event.preventDefault();
+            const btn = document.getElementById('submitBtn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Uploading...';
+
+            const formData = new FormData();
+
+            // MP3 (required)
+            const mp3File = document.getElementById('mp3File').files[0];
+            if (mp3File) formData.append('mp3', mp3File);
+
+            // Optional files
+            const jsonFile = document.getElementById('jsonFile').files[0];
+            if (jsonFile) formData.append('json', jsonFile);
+
+            const pngFile = document.getElementById('pngFile').files[0];
+            if (pngFile) formData.append('png', pngFile);
+
+            const mp4File = document.getElementById('mp4File').files[0];
+            if (mp4File) formData.append('mp4', mp4File);
+
+            // Metadata fields
+            formData.append('song_name', document.getElementById('songName').value);
+            formData.append('artist', document.getElementById('artist').value);
+            formData.append('prompt', document.getElementById('prompt').value);
+            formData.append('lyrics', document.getElementById('lyrics').value);
+            formData.append('duration', document.getElementById('duration').value);
+            formData.append('bpm', document.getElementById('bpm').value);
+
+            try {
+                const resp = await fetch('upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!resp.ok) {
+                    if (resp.status === 401) {
+                        window.location.href = 'login';
+                        return;
+                    }
+                    const err = await resp.json();
+                    throw new Error(err.error || 'Upload failed');
+                }
+
+                const result = await resp.json();
+                showStatus('✅ ' + result.message, 'success');
+                document.getElementById('uploadForm').reset();
+                ['mp3Name', 'jsonName', 'pngName', 'mp4Name'].forEach(id => {
+                    document.getElementById(id).textContent = '';
+                });
+
+            } catch (err) {
+                showStatus('❌ ' + err.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '📤 Upload Song';
+            }
+        }
+    </script>
+</body>
+</html>
