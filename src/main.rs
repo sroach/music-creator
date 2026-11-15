@@ -1664,42 +1664,63 @@ fn serve_file_with_range(filepath: &PathBuf, filename: &str, headers: &HeaderMap
     // Check for Range header
     if let Some(range_header) = headers.get("Range") {
         if let Ok(range_str) = range_header.to_str() {
-            // Parse "bytes=start-end" format
             if let Some(range_bytes) = range_str.strip_prefix("bytes=") {
                 let parts: Vec<&str> = range_bytes.split('-').collect();
-                if parts.len() == 2 {
-                    if let (Ok(start), Ok(end)) = (
-                        parts[0].parse::<u64>(),
-                        parts[1].parse::<u64>(),
-                    ) {
-                        let end = end.min(file_len.saturating_sub(1));
-                        let content_length = end.saturating_sub(start) + 1;
-
-                        let mut file = file;
-                        let _ = file.seek(std::io::SeekFrom::Start(start));
-                        let mut buffer = Vec::with_capacity(content_length as usize);
-                        let _ = file.take(content_length).read_to_end(&mut buffer);
-
-                        let mut resp_headers = HeaderMap::new();
-                        resp_headers.insert(
-                            "Content-Type",
-                            content_type.parse().expect("Content-Type should parse"),
-                        );
-                        resp_headers.insert(
-                            "Content-Range",
-                            format!("bytes {}-{}/{}", start, end, file_len)
-                                .parse().expect("Content-Range should parse"),
-                        );
-                        resp_headers.insert(
-                            "Content-Length",
-                            content_length.to_string().parse().expect("Content-Length should parse"),
-                        );
-                        resp_headers.insert(
-                            "Accept-Ranges",
-                            "bytes".parse().expect("Accept-Ranges should parse"),
-                        );
-                        return (StatusCode::PARTIAL_CONTENT, resp_headers, Body::from(buffer)).into_response();
+                let (start, end) = if parts.len() == 2 {
+                    if let Ok(start) = parts[0].parse::<u64>() {
+                        // "bytes=start-end" or "bytes=start-" (open-ended)
+                        let end = if parts[1].is_empty() {
+                            // Open-ended range: bytes=500- means from 500 to end of file
+                            file_len.saturating_sub(1)
+                        } else if let Ok(end) = parts[1].parse::<u64>() {
+                            end.min(file_len.saturating_sub(1))
+                        } else {
+                            file_len.saturating_sub(1)
+                        };
+                        (start, end)
+                    } else if parts[0].is_empty() {
+                        // Suffix range: bytes=-500 means last 500 bytes
+                        if let Ok(suffix_len) = parts[1].parse::<u64>() {
+                            let suffix_len = suffix_len.min(file_len);
+                            let start = file_len - suffix_len;
+                            (start, file_len.saturating_sub(1))
+                        } else {
+                            (0, file_len.saturating_sub(1))
+                        }
+                    } else {
+                        (0, file_len.saturating_sub(1))
                     }
+                } else {
+                    (0, file_len.saturating_sub(1))
+                };
+
+                if start <= end {
+                    let content_length = end.saturating_sub(start) + 1;
+
+                    let mut file = file;
+                    let _ = file.seek(std::io::SeekFrom::Start(start));
+                    let mut buffer = Vec::with_capacity(content_length as usize);
+                    let _ = file.take(content_length).read_to_end(&mut buffer);
+
+                    let mut resp_headers = HeaderMap::new();
+                    resp_headers.insert(
+                        "Content-Type",
+                        content_type.parse().expect("Content-Type should parse"),
+                    );
+                    resp_headers.insert(
+                        "Content-Range",
+                        format!("bytes {}-{}/{}", start, end, file_len)
+                            .parse().expect("Content-Range should parse"),
+                    );
+                    resp_headers.insert(
+                        "Content-Length",
+                        content_length.to_string().parse().expect("Content-Length should parse"),
+                    );
+                    resp_headers.insert(
+                        "Accept-Ranges",
+                        "bytes".parse().expect("Accept-Ranges should parse"),
+                    );
+                    return (StatusCode::PARTIAL_CONTENT, resp_headers, Body::from(buffer)).into_response();
                 }
             }
         }
