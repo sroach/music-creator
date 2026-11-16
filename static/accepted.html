@@ -910,8 +910,8 @@
             };
 
             // Copy URL buttons
-            const mp3Url =  encodeURIComponent(mp3Filename);
-            const videoUrl =  encodeURIComponent(videoFilename);
+            const mp3Url = 'accepted/' + encodeURIComponent(mp3Filename);
+            const videoUrl = 'accepted/' + encodeURIComponent(videoFilename);
 
             playerCopyMp3Btn.onclick = function() {
                 copyUrlToClipboard(mp3Url, playerCopyMp3Btn);
