@@ -910,8 +910,10 @@
             };
 
             // Copy URL buttons
-            const mp3Url = 'accepted/' + encodeURIComponent(mp3Filename);
-            const videoUrl = 'accepted/' + encodeURIComponent(videoFilename);
+            const basePath = window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '');
+            const acceptedPath = basePath + '/accepted/';
+            const mp3Url = acceptedPath + encodeURIComponent(mp3Filename);
+            const videoUrl = acceptedPath + encodeURIComponent(videoFilename);
 
             playerCopyMp3Btn.onclick = function() {
                 copyUrlToClipboard(mp3Url, playerCopyMp3Btn);
